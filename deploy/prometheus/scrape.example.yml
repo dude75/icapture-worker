@@ -1,0 +1,8 @@
+scrape_configs:
+  - job_name: icapture-worker
+    metrics_path: /metrics
+    scrape_interval: 15s
+    authorization:
+      credentials: "${METRICS_TOKEN}"
+    static_configs:
+      - targets: ["icapture-worker:8000"]

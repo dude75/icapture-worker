@@ -1,0 +1,13 @@
+{
+  "name": "icapture-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node Jitsi capture engine for icapture-worker",
+  "scripts": {
+    "jitsi:start": "node node/jitsi/server.js",
+    "jitsi:dev": "node --watch node/jitsi/server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

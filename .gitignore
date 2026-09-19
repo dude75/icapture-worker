@@ -1,0 +1,63 @@
+technical/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg-info/
+dist/
+build/
+
+# Virtualenv and secrets
+.venv/
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+*.code-workspace
+
+# Runtime junk at repo root
+tmp_*
+*.pid
+*.log
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Persistent data: local only; git keeps empty dirs
+data/**
+!data/.gitkeep
+!data/uploads/
+!data/uploads/.gitkeep
+!data/artifacts/
+!data/artifacts/.gitkeep
+!data/logs/
+!data/logs/.gitkeep
+
+# Node deps / caches
+node_modules/
+web/node_modules/
+web/dist/
+web/dist-ssr/
+web/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
