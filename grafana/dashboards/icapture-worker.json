@@ -12,7 +12,7 @@
   "uid": "icapture-worker",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "tags": ["icapture", "worker"],
   "templating": {
@@ -43,9 +43,35 @@
       "title": "Up",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
       "targets": [
         {
-          "expr": "max(icapture_up{job=~\"$job\", instance=~\"$instance\"})",
+          "expr": "min(icapture_up{job=~\"$job\", instance=~\"$instance\"})",
           "refId": "A"
         }
       ]
@@ -57,7 +83,7 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "max(icapture_capture_tasks_active{job=~\"$job\", instance=~\"$instance\"})",
+          "expr": "sum(icapture_capture_tasks_active{job=~\"$job\", instance=~\"$instance\"})",
           "refId": "A"
         }
       ]
@@ -69,19 +95,19 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "max(icapture_capture_slots_available{job=~\"$job\", instance=~\"$instance\"})",
+          "expr": "sum(icapture_capture_slots_available{job=~\"$job\", instance=~\"$instance\"})",
           "refId": "A"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Tasks by status",
+      "title": "Task transitions by status",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum by (status) (rate(icapture_capture_tasks_total{job=~\"$job\", instance=~\"$instance\"}[5m]))",
+          "expr": "sum by (status) (rate(icapture_capture_task_transitions_total{job=~\"$job\", instance=~\"$instance\"}[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -122,6 +148,25 @@
         {
           "expr": "sum by (route, status) (rate(icapture_http_requests_total{job=~\"$job\", instance=~\"$instance\", route!=\"/metrics\"}[5m]))",
           "legendFormat": "{{route}} {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP latency p95",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(icapture_http_request_duration_seconds_bucket{job=~\"$job\", instance=~\"$instance\", route!=\"/metrics\"}[5m])) by (le, route))",
+          "legendFormat": "{{route}}",
           "refId": "A"
         }
       ]

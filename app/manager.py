@@ -16,7 +16,7 @@ from app.jitsi_client import JitsiEngineClient, JitsiEngineError
 from app.prometheus_metrics import (
     observe_finalize,
     observe_join_failure,
-    observe_task_completed,
+    observe_task_transition,
 )
 from app.schemas import CaptureRequest, ConnectorStatus, ErrorCode, ErrorDetail, SlotsInfo, TaskStatus
 from app.stub_capture import StubCaptureEngine
@@ -118,7 +118,7 @@ class CaptureManager:
                 logger.info("restored unfinished task %s from on-disk artifact", record.task_id)
                 continue
             self.store.mark_error(record.task_id, ErrorDetail(code=ErrorCode.interrupted))
-            observe_task_completed(TaskStatus.error.value)
+            observe_task_transition(TaskStatus.error.value)
             remove_task_artifacts(self.settings.DATA_DIR, record.task_id)
 
     def _artifact_ready(self, task_id: str) -> tuple[Path, int, float] | None:
@@ -147,7 +147,7 @@ class CaptureManager:
             artifact_path=str(path),
             artifact_size_bytes=size,
         )
-        observe_task_completed(TaskStatus.success.value)
+        observe_task_transition(TaskStatus.success.value)
 
     async def _try_recover_artifact(self, task_id: str) -> bool:
         ready = await asyncio.to_thread(self._artifact_ready, task_id)
@@ -227,7 +227,7 @@ class CaptureManager:
             task_id,
             ErrorDetail(code=ErrorCode.interrupted, message=message),
         )
-        observe_task_completed(TaskStatus.error.value)
+        observe_task_transition(TaskStatus.error.value)
         remove_task_artifacts(self.settings.DATA_DIR, task_id)
 
     async def _shutdown_active_captures(self) -> None:
@@ -300,17 +300,17 @@ class CaptureManager:
             except JitsiEngineError as exc:
                 self.store.mark_error(task_id, ErrorDetail(code=ErrorCode.join_failed, message=str(exc)))
                 observe_join_failure(exc.reason)
-                observe_task_completed(TaskStatus.error.value)
+                observe_task_transition(TaskStatus.error.value)
                 raise JitsiEngineError(str(exc), reason=exc.reason) from exc
             except Exception as exc:
                 self.store.mark_error(
                     task_id,
                     ErrorDetail(code=ErrorCode.pipeline_error, message=str(exc)),
                 )
-                observe_task_completed(TaskStatus.error.value)
+                observe_task_transition(TaskStatus.error.value)
                 raise
 
-            observe_task_completed(TaskStatus.capturing.value)
+            observe_task_transition(TaskStatus.capturing.value)
             return self.store.get(task_id)  # type: ignore[return-value]
 
     async def stop_capture(self, task_id: str) -> TaskRecord:
@@ -362,7 +362,7 @@ class CaptureManager:
                 await self.engine.cancel_capture(task_id)
             remove_task_artifacts(self.settings.DATA_DIR, task_id)
             self.store.mark_canceled(task_id)
-            observe_task_completed(TaskStatus.canceled.value)
+            observe_task_transition(TaskStatus.canceled.value)
             return self.store.get(task_id)  # type: ignore[return-value]
         return record
 
@@ -410,14 +410,14 @@ class CaptureManager:
                 artifact_path=str(path),
                 artifact_size_bytes=size,
             )
-            observe_task_completed(TaskStatus.success.value)
+            observe_task_transition(TaskStatus.success.value)
         except JitsiEngineError as exc:
             if await self._try_recover_artifact(task_id):
                 logger.info("recovered task %s after engine stop error: %s", task_id, exc)
                 return
             code = ErrorCode.task_timeout if exc.reason == "timeout" else ErrorCode.invalid_file
             self.store.mark_error(task_id, ErrorDetail(code=code, message=str(exc)))
-            observe_task_completed(TaskStatus.error.value)
+            observe_task_transition(TaskStatus.error.value)
         except Exception as exc:
             if await self._try_recover_artifact(task_id):
                 logger.info("recovered task %s after finalize error: %s", task_id, exc)
@@ -426,7 +426,7 @@ class CaptureManager:
                 task_id,
                 ErrorDetail(code=ErrorCode.pipeline_error, message=str(exc)),
             )
-            observe_task_completed(TaskStatus.error.value)
+            observe_task_transition(TaskStatus.error.value)
         finally:
             self._finalize_tasks.pop(task_id, None)
             observe_finalize(asyncio.get_event_loop().time() - started)

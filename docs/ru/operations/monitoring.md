@@ -19,7 +19,7 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://127.0.0.1:8000/metrics
 
 - `icapture_up`
 - `icapture_capture_tasks_active`
-- `icapture_capture_tasks_total{status=...}`
+- `icapture_capture_task_transitions_total{status=...}`
 - `icapture_capture_slots_available`
 - `icapture_capture_join_failures_total{reason=...}`
 - `icapture_capture_finalize_seconds`

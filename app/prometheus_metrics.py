@@ -79,9 +79,9 @@ class Metrics:
         GCCollector(registry=self.registry)
         self.registry.register(RuntimeCollector(self.state))
 
-        self.tasks_total = Counter(
-            "icapture_capture_tasks_total",
-            "Capture tasks by terminal or active status",
+        self.task_transitions = Counter(
+            "icapture_capture_task_transitions_total",
+            "Capture task status transitions",
             ["status"],
             registry=self.registry,
         )
@@ -149,11 +149,11 @@ def observe_http(method: str, route: str, status_code: int, duration_sec: float)
     metrics.http_duration.labels(method=method, route=route).observe(duration_sec)
 
 
-def observe_task_completed(status: str) -> None:
+def observe_task_transition(status: str) -> None:
     metrics = get_active()
     if metrics is None or not metrics.settings.METRICS_ENABLED:
         return
-    metrics.tasks_total.labels(status=status).inc()
+    metrics.task_transitions.labels(status=status).inc()
 
 
 def observe_join_failure(reason: str) -> None:
