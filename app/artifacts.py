@@ -11,8 +11,8 @@ from pathlib import Path
 
 from app.config import get_settings
 
-ARTIFACT_EXT = "m4a"
-CONTENT_TYPE = "audio/mp4"
+ARTIFACT_EXT = "mp3"
+CONTENT_TYPE = "audio/mpeg"
 FILENAME = f"capture.{ARTIFACT_EXT}"
 PCM_SAMPLE_RATE = 48000
 
@@ -46,23 +46,21 @@ def _run_ffmpeg(args: list[str]) -> None:
         raise ValueError(f"ffmpeg failed: {detail}") from exc
 
 
-def convert_wav_to_m4a(wav_path: Path, m4a_path: Path) -> None:
+def convert_wav_to_mp3(wav_path: Path, mp3_path: Path) -> None:
     settings = get_settings()
-    m4a_path.parent.mkdir(parents=True, exist_ok=True)
+    mp3_path.parent.mkdir(parents=True, exist_ok=True)
     _run_ffmpeg(
         [
             "-y",
             "-i",
             str(wav_path),
             "-c:a",
-            "aac",
+            "libmp3lame",
             "-q:a",
-            str(settings.FFMPEG_AAC_VBR_QUALITY),
+            str(settings.FFMPEG_MP3_VBR_QUALITY),
             "-ar",
             str(settings.ARTIFACT_SAMPLE_RATE),
-            "-movflags",
-            "+faststart",
-            str(m4a_path),
+            str(mp3_path),
         ]
     )
 
@@ -105,8 +103,8 @@ def validate_artifact(path: Path) -> tuple[int, float]:
     probe = _ffprobe_json(path)
     stream = (probe.get("streams") or [{}])[0]
     codec = str(stream.get("codec_name") or "")
-    if codec != "aac":
-        raise ValueError("expected aac")
+    if codec != "mp3":
+        raise ValueError("expected mp3")
 
     sample_rate = int(stream.get("sample_rate") or 0)
     if sample_rate != settings.ARTIFACT_SAMPLE_RATE:
@@ -136,6 +134,6 @@ def write_stub_artifact(data_dir: str, task_id: str, duration_sec: float) -> Pat
     wav_path = temp_wav_path(data_dir, task_id)
     out_path = artifact_path(data_dir, task_id)
     write_stub_wav(wav_path, duration_sec)
-    convert_wav_to_m4a(wav_path, out_path)
+    convert_wav_to_mp3(wav_path, out_path)
     wav_path.unlink(missing_ok=True)
     return out_path

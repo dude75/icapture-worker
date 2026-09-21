@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     JITSI_ENGINE_URL: str = "http://127.0.0.1:8001"
     JITSI_ENGINE_TIMEOUT_SEC: float = 120
     ARTIFACT_SAMPLE_RATE: int = 44100
-    FFMPEG_AAC_VBR_QUALITY: int = 2
+    FFMPEG_MP3_VBR_QUALITY: int = 2
 
     @field_validator("MAX_CONCURRENT_CAPTURES")
     @classmethod
@@ -80,11 +80,11 @@ class Settings(BaseSettings):
             raise ValueError("ARTIFACT_SAMPLE_RATE must be 44100")
         return value
 
-    @field_validator("FFMPEG_AAC_VBR_QUALITY")
+    @field_validator("FFMPEG_MP3_VBR_QUALITY")
     @classmethod
     def _allowed_ffmpeg_quality(cls, value: int) -> int:
-        if value < 0 or value > 10:
-            raise ValueError("FFMPEG_AAC_VBR_QUALITY must be between 0 and 10")
+        if value < 0 or value > 9:
+            raise ValueError("FFMPEG_MP3_VBR_QUALITY must be between 0 and 9")
         return value
 
     @property

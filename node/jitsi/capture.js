@@ -7,10 +7,10 @@ import { resolveJitsiConfig } from "./resolve-config.js";
 import {
   ARTIFACT_EXT,
   ARTIFACT_SAMPLE_RATE,
-  FFMPEG_AAC_VBR_QUALITY,
+  FFMPEG_MP3_VBR_QUALITY,
 } from "./capture-config.js";
 import { ConferenceAudioRecorder } from "./audio-recorder.js";
-import { convertWavToM4a } from "./ffmpeg-convert.js";
+import { convertWavToMp3 } from "./ffmpeg-convert.js";
 import { writePcmWav, writeSilenceWav, writeStubWav } from "./wav.js";
 import { installWebRtcGlobals } from "./webrtc.js";
 
@@ -94,9 +94,9 @@ function tempWavPath(dataDir, taskId) {
 }
 
 async function finalizeArtifact(wavPath, artifactPathOut) {
-  await convertWavToM4a(wavPath, artifactPathOut, {
+  await convertWavToMp3(wavPath, artifactPathOut, {
     sampleRate: ARTIFACT_SAMPLE_RATE,
-    vbrQuality: FFMPEG_AAC_VBR_QUALITY,
+    vbrQuality: FFMPEG_MP3_VBR_QUALITY,
   });
   fs.unlinkSync(wavPath);
 }

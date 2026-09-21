@@ -28,7 +28,7 @@ services:
       PORT: 8001
       DATA_DIR: /data
       SDP_SEMANTICS: plan-b
-      FFMPEG_AAC_VBR_QUALITY: ${FFMPEG_AAC_VBR_QUALITY:-2}
+      FFMPEG_MP3_VBR_QUALITY: ${FFMPEG_MP3_VBR_QUALITY:-2}
       JITSI_STUB: ${JITSI_STUB:-0}
     volumes:
       - ./data:/data

@@ -1,13 +1,13 @@
 # icapture-worker
 
-External capture worker for [idigest-hub](https://github.com/dude75/idigest-hub). Joins a video conference as a bot, records mixed audio, and returns an AAC `.m4a` artifact (44.1 kHz) for the transcribe pipeline.
+External capture worker for [idigest-hub](https://github.com/dude75/idigest-hub). Joins a video conference as a bot, records mixed audio, and returns an MP3 artifact (44.1 kHz, libmp3lame VBR) for the transcribe pipeline.
 
 Russian: [README.ru.md](README.ru.md)
 
 ## What it does
 
 1. Hub calls `POST /capture` → bot joins the room and records audio.
-2. User stops capture → Hub calls `POST /tasks/{id}/stop` → worker finalizes `.m4a`.
+2. User stops capture → Hub calls `POST /tasks/{id}/stop` → worker finalizes `.mp3`.
 3. Hub polls `GET /tasks/{id}` until `status=success`.
 4. Hub downloads `GET /tasks/{id}/download` and continues with transcribe.
 
@@ -75,7 +75,7 @@ curl -s -X POST http://127.0.0.1:8000/capture \
   -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":""}'
 ```
 
-The bot joins the Jitsi room. Stop → `POST /tasks/{id}/stop` → download `.m4a`.
+The bot joins the Jitsi room. Stop → `POST /tasks/{id}/stop` → download `.mp3`.
 
 ## What is stub
 
@@ -84,7 +84,7 @@ The bot joins the Jitsi room. Stop → `POST /tasks/{id}/stop` → download `.m4
 | | Production | Stub |
 |---|---|---|
 | Join Jitsi | yes, bot in room | **no** |
-| Audio | from conference | **sine / fake `.m4a`** |
+| Audio | from conference | **sine / fake `.mp3`** |
 | Node Jitsi engine | required | may be skipped |
 | Use for | prod, manual E2E | **pytest, local API debugging** |
 
@@ -152,7 +152,7 @@ Auth: `Authorization: Bearer <API_TOKEN>` on private endpoints.
 | POST | `/capture` | Start capture (**202**) |
 | GET | `/tasks/{id}` | Poll status |
 | POST | `/tasks/{id}/stop` | Graceful stop (**202**) |
-| GET | `/tasks/{id}/download` | `.m4a` when `success` |
+| GET | `/tasks/{id}/download` | `.mp3` when `success` |
 | DELETE | `/tasks/{id}` | Cancel without artifact |
 | GET | `/metrics` | Prometheus (`METRICS_TOKEN`) |
 

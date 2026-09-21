@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.artifact_cleanup import remove_task_artifacts
-from app.artifacts import write_stub_artifact
+from app.artifacts import ARTIFACT_EXT, write_stub_artifact
 from app.schemas import ErrorCode, ErrorDetail, TaskStatus
 from app.tasks import TaskStore
 from tests.conftest import isolate_env
@@ -30,7 +30,7 @@ def test_purge_expired_deletes_task_and_artifact(tmp_path, monkeypatch) -> None:
         task_id,
         stopped_at=old,
         duration_sec=0.5,
-        artifact_path=str(tmp_path / "artifacts" / f"{task_id}.m4a"),
+        artifact_path=str(tmp_path / "artifacts" / f"{task_id}.{ARTIFACT_EXT}"),
         artifact_size_bytes=128,
     )
 
@@ -38,7 +38,7 @@ def test_purge_expired_deletes_task_and_artifact(tmp_path, monkeypatch) -> None:
     assert purged == [task_id]
     assert store.get(task_id) is None
     remove_task_artifacts(str(tmp_path), task_id)
-    assert not (tmp_path / "artifacts" / f"{task_id}.m4a").exists()
+    assert not (tmp_path / "artifacts" / f"{task_id}.{ARTIFACT_EXT}").exists()
 
 
 def test_purge_expired_skips_active_and_recent(tmp_path, monkeypatch) -> None:

@@ -1,13 +1,13 @@
 # icapture-worker
 
-Внешний worker захвата аудио для [idigest-hub](https://github.com/dude75/idigest-hub). Бот join'ит видеоконференцию, пишет mixed audio и отдаёт артефакт AAC `.m4a` (44.1 kHz) для transcribe pipeline.
+Внешний worker захвата аудио для [idigest-hub](https://github.com/dude75/idigest-hub). Бот join'ит видеоконференцию, пишет mixed audio и отдаёт артефакт MP3 (44.1 kHz, libmp3lame VBR) для transcribe pipeline.
 
 English: [README.md](README.md)
 
 ## Что делает
 
 1. Hub → `POST /capture` → бот в комнате, запись аудио.
-2. Stop → Hub → `POST /tasks/{id}/stop` → финализация `.m4a`.
+2. Stop → Hub → `POST /tasks/{id}/stop` → финализация `.mp3`.
 3. Hub poll'ит `GET /tasks/{id}` до `status=success`.
 4. Hub скачивает `GET /tasks/{id}/download` → transcribe.
 
@@ -94,7 +94,7 @@ curl -s -X POST http://127.0.0.1:8000/capture \
   -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":""}'
 ```
 
-Бот появится в комнате Jitsi. Stop → `POST /tasks/{id}/stop` → download `.m4a`.
+Бот появится в комнате Jitsi. Stop → `POST /tasks/{id}/stop` → download `.mp3`.
 
 ## Что такое stub
 
@@ -103,7 +103,7 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 | | Боевой режим | Stub |
 |---|---|---|
 | Join в Jitsi | да, бот в комнате | **нет** |
-| Аудио | с конференции | **синус / тишина в `.m4a`** |
+| Аудио | с конференции | **синус / тишина в `.mp3`** |
 | Node Jitsi engine | нужен | может не понадобиться |
 | Для чего | prod, ручной E2E | **pytest, локальная отладка API** |
 
@@ -166,7 +166,7 @@ Auth: `Authorization: Bearer <API_TOKEN>`.
 | POST | `/capture` | Старт захвата (**202**) |
 | GET | `/tasks/{id}` | Poll статуса |
 | POST | `/tasks/{id}/stop` | Graceful stop (**202**) |
-| GET | `/tasks/{id}/download` | `.m4a` при `success` |
+| GET | `/tasks/{id}/download` | `.mp3` при `success` |
 | DELETE | `/tasks/{id}` | Cancel без artifact |
 | GET | `/metrics` | Prometheus (`METRICS_TOKEN`) |
 

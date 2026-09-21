@@ -7,7 +7,7 @@ ENV HOST=0.0.0.0 \
     DATA_DIR=/data \
     NODE_ENV=production \
     SDP_SEMANTICS=plan-b \
-    FFMPEG_AAC_VBR_QUALITY=2
+    FFMPEG_MP3_VBR_QUALITY=2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg python3 make g++ \

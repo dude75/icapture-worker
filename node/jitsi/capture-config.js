@@ -3,11 +3,11 @@
 /** WebRTC/Opus decode rate — capture at full quality, no downsample here. */
 export const PCM_SAMPLE_RATE = 48000;
 
-/** AAC output in .m4a for Hub/transcribe. */
+/** MP3 output for Hub/transcribe (libmp3lame VBR). */
 export const ARTIFACT_SAMPLE_RATE = 44100;
-export const ARTIFACT_EXT = "m4a";
+export const ARTIFACT_EXT = "mp3";
 
-export const FFMPEG_AAC_VBR_QUALITY = Number.parseInt(
-  String(process.env.FFMPEG_AAC_VBR_QUALITY || "2"),
+export const FFMPEG_MP3_VBR_QUALITY = Number.parseInt(
+  String(process.env.FFMPEG_MP3_VBR_QUALITY || "2"),
   10,
 );

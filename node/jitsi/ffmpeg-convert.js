@@ -19,9 +19,9 @@ function runCommand(command, args) {
   });
 }
 
-export async function convertWavToM4a(
+export async function convertWavToMp3(
   wavPath,
-  m4aPath,
+  mp3Path,
   { sampleRate, vbrQuality } = {},
 ) {
   if (!fs.existsSync(wavPath)) {
@@ -32,17 +32,15 @@ export async function convertWavToM4a(
     "-i",
     wavPath,
     "-c:a",
-    "aac",
+    "libmp3lame",
     "-q:a",
     String(vbrQuality),
     "-ar",
     String(sampleRate),
-    "-movflags",
-    "+faststart",
-    m4aPath,
+    mp3Path,
   ];
   await runCommand("ffmpeg", args);
-  if (!fs.existsSync(m4aPath)) {
-    throw new Error(`ffmpeg did not produce ${m4aPath}`);
+  if (!fs.existsSync(mp3Path)) {
+    throw new Error(`ffmpeg did not produce ${mp3Path}`);
   }
 }

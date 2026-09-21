@@ -58,8 +58,11 @@ def test_capture_stop_download_flow(client: TestClient) -> None:
 
     download = client.get(f"/tasks/{task_id}/download", headers=auth_headers())
     assert download.status_code == 200
-    assert download.headers["content-type"].startswith("audio/mp4")
-    assert download.content[:4] == b"ftyp" or len(download.content) > 128
+    assert download.headers["content-type"].startswith("audio/mpeg")
+    content = download.content
+    assert content[:3] == b"ID3" or (
+        len(content) >= 2 and content[0] == 0xFF and (content[1] & 0xE0) == 0xE0
+    )
 
 
 def test_delete_during_capturing(client: TestClient) -> None:
