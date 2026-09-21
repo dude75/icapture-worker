@@ -13,8 +13,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-COPY node/jitsi/package.json ./package.json
-RUN npm install --omit=dev
+COPY node/jitsi/package.json node/jitsi/package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY node/jitsi ./
 
