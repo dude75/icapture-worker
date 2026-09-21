@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
-from starlette.requests import ClientDisconnect
-
 from app.artifacts import CONTENT_TYPE as ARTIFACT_CONTENT_TYPE
 from app.artifacts import FILENAME as ARTIFACT_FILENAME
 from app.auth import require_api_token, require_metrics_token
@@ -22,9 +19,8 @@ from app.jitsi_client import JitsiEngineError
 from app.manager import CaptureManager, QueueFullError, TaskConflictError
 from app.prometheus_metrics import (
     CONTENT_TYPE,
+    PrometheusHttpMiddleware,
     create_metrics,
-    http_path_template,
-    observe_http,
     render,
     set_active,
 )
@@ -62,6 +58,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="icapture-worker", version=read_version(), lifespan=lifespan)
+app.add_middleware(PrometheusHttpMiddleware)
 
 
 def _api_error(status_code: int, code: ErrorCode, message: str | None = None) -> JSONResponse:
@@ -78,22 +75,6 @@ def _http_error(status_code: int, code: ErrorCode, message: str | None = None) -
 
 def get_manager() -> CaptureManager:
     return app.state.manager
-
-
-@app.middleware("http")
-async def prometheus_http_middleware(request: Request, call_next):
-    started = time.perf_counter()
-    path = http_path_template(request)
-    status_code = 500
-    try:
-        response = await call_next(request)
-        status_code = response.status_code
-        return response
-    except ClientDisconnect:
-        status_code = 499
-        return Response(status_code=status_code)
-    finally:
-        observe_http(request.method, path, status_code, time.perf_counter() - started)
 
 
 @app.exception_handler(HTTPException)

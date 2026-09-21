@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from starlette.requests import ClientDisconnect, Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -137,6 +141,37 @@ def render() -> bytes:
     if metrics is None:
         return generate_latest(CollectorRegistry())
     return generate_latest(metrics.registry)
+
+
+class PrometheusHttpMiddleware:
+    """ASGI middleware for HTTP metrics (avoids BaseHTTPMiddleware breaking FileResponse)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = time.perf_counter()
+        method = scope.get("method", "GET")
+        path = http_path_template(Request(scope, receive))
+        status_code = 500
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except ClientDisconnect:
+            status_code = 499
+            raise
+        finally:
+            observe_http(method, path, status_code, time.perf_counter() - started)
 
 
 def observe_http(method: str, route: str, status_code: int, duration_sec: float) -> None:

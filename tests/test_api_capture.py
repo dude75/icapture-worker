@@ -60,6 +60,9 @@ def test_capture_stop_download_flow(client: TestClient) -> None:
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("audio/mpeg")
     content = download.content
+    content_length = download.headers.get("content-length")
+    if content_length is not None:
+        assert int(content_length) == len(content)
     assert content[:3] == b"ID3" or (
         len(content) >= 2 and content[0] == 0xFF and (content[1] & 0xE0) == 0xE0
     )
