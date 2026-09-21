@@ -20,6 +20,9 @@ build/
 .env.*
 !.env.example
 
+# Local drafts (not part of the repo)
+technical/
+
 # IDE / OS
 .DS_Store
 *.swp
