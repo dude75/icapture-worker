@@ -27,23 +27,37 @@ class Settings(BaseSettings):
     LOG_BACKUP_COUNT: int = 5
     METRICS_ENABLED: bool = True
 
-    MAX_CONCURRENT_CAPTURES: int = 2
+    WORKERS: int = 2
+    WORKER_QUEUE_SIZE: int = 0
+    ENABLED_CONNECTORS: str = "jitsi"
+    CAPTURE_FINALIZE_TIMEOUT_SEC: float = 120
     MAX_CAPTURE_DURATION_SEC: float = 14400
     TASK_TTL_SEC: int = 3600
     DEFAULT_BOT_DISPLAY_NAME: str = "Transcription Bot"
     LOG_LEVEL: str = "info"
+    PLAYWRIGHT_HEADLESS: bool = True
 
-    JITSI_ENGINE_URL: str = "http://127.0.0.1:8001"
-    JITSI_ENGINE_TIMEOUT_SEC: float = 120
     ARTIFACT_SAMPLE_RATE: int = 44100
     FFMPEG_MP3_VBR_QUALITY: int = 2
 
-    @field_validator("MAX_CONCURRENT_CAPTURES")
+    @field_validator("WORKERS")
     @classmethod
-    def _positive_slots(cls, value: int) -> int:
+    def _positive_workers(cls, value: int) -> int:
         if value < 1:
-            raise ValueError("MAX_CONCURRENT_CAPTURES must be >= 1")
+            raise ValueError("WORKERS must be >= 1")
         return value
+
+    @field_validator("WORKER_QUEUE_SIZE")
+    @classmethod
+    def _non_negative_queue(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("WORKER_QUEUE_SIZE must be >= 0")
+        return value
+
+    @property
+    def enabled_connectors(self) -> set[str]:
+        parts = [item.strip().lower() for item in self.ENABLED_CONNECTORS.split(",")]
+        return {item for item in parts if item}
 
     @field_validator("MAX_CAPTURE_DURATION_SEC")
     @classmethod

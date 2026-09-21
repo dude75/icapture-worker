@@ -10,6 +10,34 @@ from tests.conftest import isolate_env
 
 
 @pytest.mark.asyncio
+async def test_restore_joining_marks_interrupted(tmp_path, monkeypatch) -> None:
+    isolate_env(tmp_path, monkeypatch)
+    store = TaskStore(str(tmp_path / "tasks.db"))
+    task_id = "orphaned-joining"
+    store.create(
+        task_id=task_id,
+        connector="jitsi",
+        meeting_host="meet.example.com",
+        meeting_room="room",
+        display_name="bot",
+        pin="",
+        jwt=None,
+    )
+    store.update_status(task_id, TaskStatus.joining)
+
+    manager = CaptureManager()
+    await manager.start()
+    try:
+        record = store.get(task_id)
+        assert record is not None
+        assert record.status is TaskStatus.error
+        assert record.error is not None
+        assert record.error["code"] == ErrorCode.interrupted.value
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.asyncio
 async def test_restore_unfinished_marks_interrupted(tmp_path, monkeypatch) -> None:
     isolate_env(tmp_path, monkeypatch)
     store = TaskStore(str(tmp_path / "tasks.db"))
@@ -23,6 +51,7 @@ async def test_restore_unfinished_marks_interrupted(tmp_path, monkeypatch) -> No
         pin="",
         jwt=None,
     )
+    store.update_status(task_id, TaskStatus.capturing)
 
     manager = CaptureManager()
     await manager.start()

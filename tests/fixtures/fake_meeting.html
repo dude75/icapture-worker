@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>icapture test meeting</title>
+  </head>
+  <body>
+    <div data-testid="icapture-test-ready"></div>
+    <div data-testid="toolbar"></div>
+    <script>
+      (function () {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx({ sampleRate: 48000 });
+        void ctx.resume();
+        const osc = ctx.createOscillator();
+        osc.frequency.value = 440;
+        const gain = ctx.createGain();
+        gain.gain.value = 0.2;
+        const dest = ctx.createMediaStreamDestination();
+        osc.connect(gain);
+        gain.connect(dest);
+        osc.start();
+        const track = dest.stream.getAudioTracks()[0];
+        const mixGain = ctx.createGain();
+        mixGain.connect(ctx.createMediaStreamDestination());
+        const src = ctx.createMediaStreamSource(new MediaStream([track]));
+        src.connect(mixGain);
+        const chunks = [];
+        let totalSamples = 0;
+        const tap = ctx.createScriptProcessor(4096, 1, 1);
+        const tapSrc = ctx.createMediaStreamSource(dest.stream);
+        tapSrc.connect(tap);
+        const silent = ctx.createGain();
+        silent.gain.value = 0;
+        tap.connect(silent);
+        silent.connect(ctx.destination);
+        tap.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          const copy = new Float32Array(input.length);
+          copy.set(input);
+          chunks.push(copy);
+          totalSamples += copy.length;
+        };
+        window.__icapture = {
+          resume() {
+            return ctx.resume();
+          },
+          sinkCount() {
+            return 1;
+          },
+          sampleCount() {
+            return totalSamples;
+          },
+          flushInt16Pcm() {
+            const out = new Int16Array(totalSamples);
+            let offset = 0;
+            for (const chunk of chunks) {
+              for (let i = 0; i < chunk.length; i++) {
+                const s = Math.max(-1, Math.min(1, chunk[i]));
+                out[offset++] = s < 0 ? s * 32768 : s * 32767;
+              }
+            }
+            chunks.length = 0;
+            totalSamples = 0;
+            return out;
+          },
+        };
+      })();
+    </script>
+  </body>
+</html>

@@ -7,47 +7,51 @@ Russian: [README.ru.md](README.ru.md)
 ## What it does
 
 1. Hub calls `POST /capture` → bot joins the room and records audio.
-2. User stops capture → Hub calls `POST /tasks/{id}/stop` → worker finalizes `.mp3`.
+2. Capture ends when the Hub calls `POST /tasks/{id}/stop`, or when the worker **auto-finalizes** (see below).
 3. Hub polls `GET /tasks/{id}` until `status=success`.
 4. Hub downloads `GET /tasks/{id}/download` and continues with transcribe.
 
-Not included in v1: lobby, live transcript, Zoom/Teams capture, browser automation (Puppeteer/Jibri).
+**Auto-finalize** (same path as graceful stop — task moves to `finalizing` → `success` with an MP3):
+
+- `MAX_CAPTURE_DURATION_SEC` elapsed
+- Moderator **kick** from the conference
+- Bot **leaves** or loses the conference (disconnect, room closed, page closed)
+
+Look for log lines: `browser capture auto-stop task=… reason=kicked|conference_left|…`.
+
+Not included in v1: live transcript, Zoom/Teams capture, Jibri/recording-bridge mode. Jitsi **lobby PIN** is supported via `pin` in `POST /capture` when the deployment uses a password lobby.
 
 ## Requirements
 
 - Python 3.12+
-- Node.js 22+ (Jitsi engine sidecar)
-- Native build tools for `wrtc` when running real Jitsi capture (see Node image)
+- **ffmpeg** on `PATH` (MP3 encode)
+- **Playwright Chromium** (Jitsi join + in-page audio mix); installed in Docker at build time; for local dev see Install
 
 ## Architecture
 
 ```
-Hub / curl  →  Python FastAPI (:8000)  →  Node Jitsi engine (:8001)  →  Jitsi Meet
-               tasks, auth, metrics         join room, record audio
+Hub / curl  →  Python FastAPI (:8000)
+               ├─ task queue, auth, metrics, SQLite
+               └─ Playwright Chromium → Jitsi Meet (web client)
 ```
 
-- **Python API** — HTTP for Hub, task lifecycle.
-- **Node Jitsi engine** — the only part that talks to Jitsi (lib-jitsi-meet + wrtc).
-- **“Node” in docs** = Node Jitsi engine (`npm start`), **not** the Jitsi server.
+- **Single process** — no Node sidecar; capture lives under `app/capture/` (`browser.py`, `engine.py`).
+- **`node/jitsi/`** — legacy lib-jitsi-meet + wrtc experiment; **not** used by `python -m app.serve`.
 
 ## Install (once)
 
 ```bash
 python3.12 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python -m playwright install chromium chromium-headless-shell
+# Linux only (system libs for Chromium):
+# ./.venv/bin/python -m playwright install-deps chromium
 cp .env.example .env
-cd node/jitsi && npm install && cd ../..
 ```
 
 ## Run — real conference (prod / manual E2E)
 
-**No stub flags.** Two terminals:
-
 ```bash
-# Terminal 1 — Node Jitsi engine
-cd node/jitsi && npm start
-
-# Terminal 2 — Python API
 ./.venv/bin/python -m app.serve
 ```
 
@@ -57,14 +61,19 @@ Health check:
 curl -s http://127.0.0.1:8000/health | jq
 ```
 
-Example `connectors` (objects with `status`, `label`; `reason` only when `unavailable`):
+Example `connectors` (objects with `status`, `label`; `reason` only when `unavailable`) and `workers` (in-process pool for idigest-hub dispatch):
 
 ```json
 {
-  "jitsi": { "status": "loaded", "label": "Jitsi Meet" },
-  "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" }
+  "workers": { "max": 2, "active": 0, "available": 2 },
+  "connectors": {
+    "jitsi": { "status": "loaded", "label": "Jitsi Meet" },
+    "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" }
+  }
 }
 ```
+
+`workers.max` = `WORKERS`; `active` = pending captures (from accept until terminal); `available` = `max - active` (capped).
 
 Start capture:
 
@@ -75,54 +84,9 @@ curl -s -X POST http://127.0.0.1:8000/capture \
   -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":""}'
 ```
 
-The bot joins the Jitsi room. Stop → `POST /tasks/{id}/stop` → download `.mp3`.
+The bot joins the Jitsi room via the web UI (prejoin skipped where possible, mic muted). Stop manually → `POST /tasks/{id}/stop` → download `.mp3`, or wait for auto-finalize after kick / timeout.
 
-## What is stub
-
-**Stub** (mock) — a mode where part of the system **pretends** to work without doing the real action.
-
-| | Production | Stub |
-|---|---|---|
-| Join Jitsi | yes, bot in room | **no** |
-| Audio | from conference | **sine / fake `.mp3`** |
-| Node Jitsi engine | required | may be skipped |
-| Use for | prod, manual E2E | **pytest, local API debugging** |
-
-Two stub flags (do not confuse):
-
-| Flag | Where | What it does |
-|------|-------|--------------|
-| `ICAPTURE_STUBS=1` | Python | Python **fakes** capture itself. Node is **not called** — no second terminal. |
-| `JITSI_STUB=1` | Node (`npm start`) | Node **runs**, Python talks to it, but Node **does not join** Jitsi — writes test artifact only. |
-
-**“Without Node”** in stub docs = Node Jitsi engine (`npm start`) is **not running**, because Python with `ICAPTURE_STUBS=1` never calls it. This is **not** the Jitsi server.
-
-Do **not** use stub in production — Hub and users will not get a real meeting recording.
-
-## Run — tests / development (stub)
-
-| Mode | Python | Node | Purpose |
-|------|--------|------|---------|
-| **A** — pytest | `ICAPTURE_STUBS=1` | not needed | `./.venv/bin/pytest` |
-| **B** — API without Node | `ICAPTURE_STUBS=1` | not needed | local HTTP pipeline check |
-| **C** — Python↔Node wiring | no stub | `JITSI_STUB=1 npm start` | sidecar check without Jitsi |
-
-**Mode B** (simplest dev):
-
-```bash
-ICAPTURE_STUBS=1 ./.venv/bin/python -m app.serve
-# do not start Node
-```
-
-**Mode C** (if you need to test the Node sidecar):
-
-```bash
-# Terminal 1
-cd node/jitsi && JITSI_STUB=1 npm start
-
-# Terminal 2 — do not set ICAPTURE_STUBS
-./.venv/bin/python -m app.serve
-```
+If `GET /health` shows `jitsi.status: unavailable`, check `reason` (often missing Chromium — run `playwright install` as above).
 
 ## `.env`
 
@@ -133,12 +97,15 @@ cd node/jitsi && JITSI_STUB=1 npm start
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | HTTP port |
 | `DATA_DIR` | `./data` | Artifacts and SQLite |
-| `MAX_CONCURRENT_CAPTURES` | `2` | Parallel capture slots |
-| `MAX_CAPTURE_DURATION_SEC` | `14400` | Auto-stop after 4h |
+| `WORKERS` | `2` | In-process parallel captures |
+| `WORKER_QUEUE_SIZE` | `0` | Extra `queued` accepts beyond `WORKERS` (0 recommended for idigest-hub) |
+| `ENABLED_CONNECTORS` | `jitsi` | Connectors this instance accepts |
+| `MAX_CAPTURE_DURATION_SEC` | `14400` | Auto-stop after 4h (`0` = disabled) |
+| `CAPTURE_FINALIZE_TIMEOUT_SEC` | `120` | Max wait after auto-stop before giving up on finalize |
 | `TASK_TTL_SEC` | `3600` | Purge finished tasks and artifact files after TTL |
 | `DEFAULT_BOT_DISPLAY_NAME` | `Transcription Bot` | Bot name in room |
-| `JITSI_ENGINE_URL` | `http://127.0.0.1:8001` | Node sidecar URL |
-| `ICAPTURE_STUBS` | — | `1` = Python stub; Node not required (tests only) |
+| `PLAYWRIGHT_HEADLESS` | `true` | Headless Chromium; set `false` for local UI debugging |
+| `LOG_DIR` | `./data/logs` | Join debug screenshots on timeout |
 
 ## API summary
 
@@ -146,8 +113,7 @@ Auth: `Authorization: Bearer <API_TOKEN>` on private endpoints.
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/health` | Public; `connectors` (status/label/reason) + `slots` |
-| GET | `/ready` | 200 if free slot available |
+| GET | `/health` | Public; `connectors`, `workers` (max/active/available) |
 | GET | `/tasks` | Probe/list tasks |
 | POST | `/capture` | Start capture (**202**) |
 | GET | `/tasks/{id}` | Poll status |
@@ -183,7 +149,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Services: `icapture-worker` (API, port 8000) + `jitsi-engine` (Node, internal 8001).
+Service: `icapture-worker` (API + Playwright/Chromium in one container, port 8000). Browsers are installed at image build time (`playwright install-deps` + `chromium` + `chromium-headless-shell`).
 
 ## Typical errors
 

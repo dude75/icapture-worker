@@ -10,9 +10,11 @@ ENV PATH="/opt/venv/bin:$PATH" \
     DATA_DIR=/data \
     SQLITE_PATH=/data/tasks.db \
     LOG_DIR=/data/logs \
-    MAX_CONCURRENT_CAPTURES=2 \
+    WORKERS=2 \
+    WORKER_QUEUE_SIZE=4 \
     TASK_TTL_SEC=3600 \
-    JITSI_ENGINE_URL=http://jitsi-engine:8001
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    PLAYWRIGHT_HEADLESS=true
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
@@ -21,7 +23,10 @@ RUN apt-get update \
     && pip install --no-cache-dir -U pip
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && mkdir -p /opt/ms-playwright \
+    && playwright install-deps chromium \
+    && playwright install chromium chromium-headless-shell
 
 COPY version.txt ./
 COPY app ./app
@@ -32,7 +37,7 @@ RUN set -eux; \
         useradd --uid 1001 --gid 1001 --create-home --home-dir /home/app --shell /usr/sbin/nologin app; \
     fi; \
     mkdir -p /data; \
-    chown -R 1001:1001 /app /opt/venv /data
+    chown -R 1001:1001 /app /opt/venv /opt/ms-playwright /data
 
 USER 1001:1001
 

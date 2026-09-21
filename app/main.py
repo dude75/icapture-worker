@@ -9,13 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from app.artifacts import CONTENT_TYPE as ARTIFACT_CONTENT_TYPE
 from app.artifacts import FILENAME as ARTIFACT_FILENAME
 from app.auth import require_api_token, require_metrics_token
 from app.config import get_settings
 from app.logging_setup import setup_logging
-from app.jitsi_client import JitsiEngineError
 from app.manager import CaptureManager, QueueFullError, TaskConflictError
 from app.prometheus_metrics import (
     CONTENT_TYPE,
@@ -31,8 +30,8 @@ from app.schemas import (
     ConnectorStatus,
     ErrorCode,
     HealthResponse,
-    SlotsInfo,
     TaskListItem,
+    WorkersPoolInfo,
     TaskResponse,
     TaskStatus,
     error_payload,
@@ -96,7 +95,7 @@ def root() -> RedirectResponse:
 
 @app.get("/health", response_model=HealthResponse, response_model_exclude_none=True)
 async def health(manager: CaptureManager = Depends(get_manager)) -> HealthResponse:
-    await manager.refresh_engine_health()
+    await manager.refresh_browser_health()
     connectors_raw = manager.connector_status()
     connectors = {
         name: ConnectorInfo(
@@ -106,20 +105,17 @@ async def health(manager: CaptureManager = Depends(get_manager)) -> HealthRespon
         )
         for name, info in connectors_raw.items()
     }
+    pool = manager.worker_pool()
     return HealthResponse(
         status="ok",
         version=read_version(),
         connectors=connectors,
-        slots=manager.slots(),
+        workers=WorkersPoolInfo(
+            max=pool["max"],
+            active=pool["active"],
+            available=pool["available"],
+        ),
     )
-
-
-@app.get("/ready", response_model=None)
-async def ready(manager: CaptureManager = Depends(get_manager)):
-    slots: SlotsInfo = manager.slots()
-    if slots.available > 0:
-        return {"status": "ready"}
-    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "full"})
 
 
 @app.get("/metrics")
@@ -163,8 +159,12 @@ async def capture(
         record = await manager.create_capture(body, task_id_out=task_id_out)
     except QueueFullError:
         return _api_error(status.HTTP_503_SERVICE_UNAVAILABLE, ErrorCode.queue_full)
-    except JitsiEngineError:
-        return _api_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ErrorCode.join_failed)
+    except RuntimeError as exc:
+        return _api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            ErrorCode.join_failed,
+            str(exc),
+        )
     except ValueError as exc:
         code = exc.args[0] if exc.args else ErrorCode.pipeline_error
         if code is ErrorCode.join_failed:
@@ -212,18 +212,39 @@ async def stop_task(
 
 
 @app.get("/tasks/{task_id}/download", response_model=None)
-def download_task(
+async def download_task(
     task_id: str,
     _: str = Depends(require_api_token),
     manager: CaptureManager = Depends(get_manager),
 ):
     try:
-        path = manager.get_artifact_path(task_id)
+        path, expected_size = manager.get_artifact_download(task_id)
     except KeyError:
         return _api_error(status.HTTP_404_NOT_FOUND, ErrorCode.not_found)
     except ValueError:
         return _api_error(status.HTTP_404_NOT_FOUND, ErrorCode.not_found)
-    return FileResponse(path, media_type=ARTIFACT_CONTENT_TYPE, filename=ARTIFACT_FILENAME)
+
+    def read_body() -> bytes:
+        data = path.read_bytes()
+        if len(data) != expected_size:
+            raise ValueError("artifact size mismatch")
+        return data
+
+    try:
+        body = await asyncio.to_thread(read_body)
+    except ValueError:
+        return _api_error(status.HTTP_404_NOT_FOUND, ErrorCode.not_found)
+    except OSError:
+        return _api_error(status.HTTP_404_NOT_FOUND, ErrorCode.not_found)
+
+    return Response(
+        content=body,
+        media_type=ARTIFACT_CONTENT_TYPE,
+        headers={
+            "content-disposition": f'attachment; filename="{ARTIFACT_FILENAME}"',
+            "content-length": str(len(body)),
+        },
+    )
 
 
 @app.delete("/tasks/{task_id}")

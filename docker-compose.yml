@@ -8,40 +8,9 @@ services:
     env_file:
       - .env
     environment:
-      JITSI_ENGINE_URL: http://jitsi-engine:8001
       DATA_DIR: /data
       SQLITE_PATH: /data/tasks.db
       LOG_DIR: /data/logs
     volumes:
       - ./data:/data
-    depends_on:
-      jitsi-engine:
-        condition: service_healthy
     user: "1001:1001"
-
-  jitsi-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile.jitsi
-    environment:
-      HOST: 0.0.0.0
-      PORT: 8001
-      DATA_DIR: /data
-      SDP_SEMANTICS: plan-b
-      FFMPEG_MP3_VBR_QUALITY: ${FFMPEG_MP3_VBR_QUALITY:-2}
-      JITSI_STUB: ${JITSI_STUB:-0}
-    volumes:
-      - ./data:/data
-    user: "1001:1001"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:8001/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 15s

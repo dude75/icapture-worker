@@ -63,14 +63,20 @@ class RuntimeCollector(Collector):
 
     def collect(self):
         yield GaugeMetricFamily("icapture_up", "Process is serving /metrics", value=1.0)
-        slots = 0.0
         active = 0.0
+        queued = 0.0
+        workers = 0.0
         if self.state.manager is not None:
-            info = self.state.manager.slots()
-            slots = float(info.available)
-            active = float(info.active)
-        yield GaugeMetricFamily("icapture_capture_tasks_active", "Active capture tasks", value=active)
-        yield GaugeMetricFamily("icapture_capture_slots_available", "Available capture slots", value=slots)
+            active = float(self.state.manager.store.count_active())
+            queued = float(self.state.manager.store.count_queued())
+            workers = float(self.state.settings.WORKERS if self.state.settings else 0)
+        yield GaugeMetricFamily(
+            "icapture_capture_tasks_active",
+            "Queued+joining+capturing+finalizing tasks",
+            value=active,
+        )
+        yield GaugeMetricFamily("icapture_capture_tasks_queued", "Queued capture tasks", value=queued)
+        yield GaugeMetricFamily("icapture_worker_slots", "Configured WORKERS", value=workers)
 
 
 class Metrics:

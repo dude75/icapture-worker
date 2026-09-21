@@ -8,5 +8,6 @@ def test_metrics_excludes_self_from_http_counter(client: TestClient) -> None:
     assert response.status_code == 200
     text = response.text
     assert "icapture_up" in text
-    assert "icapture_capture_slots_available" in text
+    assert "icapture_worker_slots" in text
+    assert "icapture_capture_tasks_queued" in text
     assert 'route="/metrics"' not in text or 'icapture_http_requests_total{method="GET",route="/metrics"' not in text

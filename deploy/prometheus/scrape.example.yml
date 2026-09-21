@@ -1,8 +1,14 @@
+# Example Prometheus scrape config for icapture-worker.
+# Set METRICS_TOKEN to the same value as the worker env var (token only, no "Bearer " prefix).
+
 scrape_configs:
   - job_name: icapture-worker
     metrics_path: /metrics
     scrape_interval: 15s
     authorization:
+      type: Bearer
       credentials: "${METRICS_TOKEN}"
     static_configs:
       - targets: ["icapture-worker:8000"]
+        labels:
+          service: icapture-worker

@@ -12,7 +12,7 @@
   "uid": "icapture-worker",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "tags": ["icapture", "worker"],
   "templating": {
@@ -90,12 +90,24 @@
     },
     {
       "type": "stat",
-      "title": "Available slots",
+      "title": "Queued tasks",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "sum(icapture_capture_slots_available{job=~\"$job\", instance=~\"$instance\"})",
+          "expr": "sum(icapture_capture_tasks_queued{job=~\"$job\", instance=~\"$instance\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Worker slots (WORKERS)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "max(icapture_worker_slots{job=~\"$job\", instance=~\"$instance\"})",
           "refId": "A"
         }
       ]

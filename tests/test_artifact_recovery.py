@@ -49,7 +49,7 @@ async def test_reconcile_recoverable_errors(tmp_path, monkeypatch) -> None:
     _create_error_task(manager, task_id)
     write_stub_artifact(str(tmp_path), task_id, 0.5)
 
-    await manager.reconcile_recoverable_tasks()
+    await manager.reconcile_all()
     record = manager.store.get(task_id)
     assert record is not None
     assert record.status is TaskStatus.success

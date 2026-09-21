@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskStatus(str, Enum):
+    queued = "queued"
+    joining = "joining"
     capturing = "capturing"
     finalizing = "finalizing"
     success = "success"
@@ -52,12 +54,6 @@ class ErrorDetail(BaseModel):
     message: str | None = None
 
 
-class SlotsInfo(BaseModel):
-    max: int
-    active: int
-    available: int
-
-
 class CaptureRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -99,8 +95,16 @@ class TaskListItem(BaseModel):
     connector: str | None = None
 
 
+class WorkersPoolInfo(BaseModel):
+    """In-process pool capacity (idigest-hub reads max|active|available)."""
+
+    max: int = Field(..., ge=0)
+    active: int = Field(..., ge=0)
+    available: int = Field(..., ge=0)
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     connectors: dict[str, ConnectorInfo]
-    slots: SlotsInfo
+    workers: WorkersPoolInfo

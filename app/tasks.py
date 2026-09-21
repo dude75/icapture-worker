@@ -93,7 +93,7 @@ class TaskStore:
                 """,
                 (
                     task_id,
-                    TaskStatus.capturing.value,
+                    TaskStatus.queued.value,
                     connector,
                     meeting_host,
                     meeting_room,
@@ -128,7 +128,12 @@ class TaskStore:
         return [self._row_to_record(row) for row in rows]
 
     def count_active(self) -> int:
-        active = {TaskStatus.capturing.value, TaskStatus.finalizing.value}
+        active = {
+            TaskStatus.queued.value,
+            TaskStatus.joining.value,
+            TaskStatus.capturing.value,
+            TaskStatus.finalizing.value,
+        }
         with self._lock:
             row = self._conn.execute(
                 f"""
@@ -138,6 +143,26 @@ class TaskStore:
                 tuple(active),
             ).fetchone()
         return int(row[0]) if row is not None else 0
+
+    def count_queued(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM capture_tasks WHERE status = ?",
+                (TaskStatus.queued.value,),
+            ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def list_queued_fifo(self) -> list[TaskRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT * FROM capture_tasks
+                WHERE status = ?
+                ORDER BY started_at ASC
+                """,
+                (TaskStatus.queued.value,),
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
 
     def update_status(self, task_id: str, status: TaskStatus) -> None:
         with self._lock:
@@ -240,7 +265,12 @@ class TaskStore:
         return task_ids
 
     def list_unfinished(self) -> list[TaskRecord]:
-        active = {TaskStatus.capturing.value, TaskStatus.finalizing.value}
+        active = {
+            TaskStatus.queued.value,
+            TaskStatus.joining.value,
+            TaskStatus.capturing.value,
+            TaskStatus.finalizing.value,
+        }
         with self._lock:
             rows = self._conn.execute(
                 f"""
