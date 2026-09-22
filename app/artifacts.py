@@ -21,16 +21,30 @@ def artifact_path(data_dir: str, task_id: str) -> Path:
     return Path(data_dir) / "artifacts" / f"{task_id}.{ARTIFACT_EXT}"
 
 
+def temp_dir(data_dir: str) -> Path:
+    return Path(data_dir) / "tmp"
+
+
 def temp_wav_path(data_dir: str, task_id: str) -> Path:
-    return Path(data_dir) / "artifacts" / f"{task_id}.pcm.wav"
+    return temp_dir(data_dir) / f"{task_id}.pcm.wav"
 
 
 def temp_pcm_path(data_dir: str, task_id: str) -> Path:
-    return Path(data_dir) / "artifacts" / f"{task_id}.pcm"
+    return temp_dir(data_dir) / f"{task_id}.pcm"
+
+
+def temp_mp3_part_path(data_dir: str, task_id: str) -> Path:
+    return temp_dir(data_dir) / f"{task_id}.part.{ARTIFACT_EXT}"
 
 
 def ensure_artifacts_dir(data_dir: str) -> Path:
     path = Path(data_dir) / "artifacts"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def ensure_tmp_dir(data_dir: str) -> Path:
+    path = temp_dir(data_dir)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -50,10 +64,6 @@ def _run_ffmpeg(args: list[str]) -> None:
         raise ValueError(f"ffmpeg failed: {detail}") from exc
 
 
-def artifact_part_path(mp3_path: Path) -> Path:
-    return mp3_path.with_name(f"{mp3_path.stem}.part{mp3_path.suffix}")
-
-
 def append_pcm_samples(path: Path, pcm_samples: list[int]) -> None:
     if not pcm_samples:
         return
@@ -65,7 +75,9 @@ def append_pcm_samples(path: Path, pcm_samples: list[int]) -> None:
 def convert_pcm_to_mp3(pcm_path: Path, mp3_path: Path) -> None:
     settings = get_settings()
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = artifact_part_path(mp3_path)
+    data_dir = str(mp3_path.parent.parent)
+    tmp_path = temp_mp3_part_path(data_dir, mp3_path.stem)
+    ensure_tmp_dir(data_dir)
     if tmp_path.exists():
         tmp_path.unlink()
     try:
@@ -98,7 +110,9 @@ def convert_pcm_to_mp3(pcm_path: Path, mp3_path: Path) -> None:
 def convert_wav_to_mp3(wav_path: Path, mp3_path: Path) -> None:
     settings = get_settings()
     mp3_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = artifact_part_path(mp3_path)
+    data_dir = str(mp3_path.parent.parent)
+    tmp_path = temp_mp3_part_path(data_dir, mp3_path.stem)
+    ensure_tmp_dir(data_dir)
     if tmp_path.exists():
         tmp_path.unlink()
     try:

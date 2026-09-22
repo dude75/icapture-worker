@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.artifact_cleanup import remove_task_artifacts
-from app.artifacts import artifact_path, ensure_artifacts_dir, validate_artifact
+from app.artifacts import artifact_path, ensure_artifacts_dir, ensure_tmp_dir, validate_artifact
 from app.capture import browser as browser_capture
 from app.config import Settings, get_settings
 from app.url_parser import InvalidMeetingUrl, parse_meeting_url
@@ -39,6 +39,7 @@ class CaptureManager:
 
     async def start(self) -> None:
         ensure_artifacts_dir(self.settings.DATA_DIR)
+        ensure_tmp_dir(self.settings.DATA_DIR)
         Path(self.settings.LOG_DIR).mkdir(parents=True, exist_ok=True)
 
         async def on_auto_stop(task_id: str, *, reason: str) -> None:

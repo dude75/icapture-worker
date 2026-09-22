@@ -48,6 +48,8 @@ data/**
 !data/uploads/.gitkeep
 !data/artifacts/
 !data/artifacts/.gitkeep
+!data/tmp/
+!data/tmp/.gitkeep
 !data/logs/
 !data/logs/.gitkeep
 

@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     def artifacts_dir(self) -> str:
         return f"{self.DATA_DIR.rstrip('/')}/artifacts"
 
+    @property
+    def tmp_dir(self) -> str:
+        return f"{self.DATA_DIR.rstrip('/')}/tmp"
+
 
 @lru_cache
 def get_settings() -> Settings:

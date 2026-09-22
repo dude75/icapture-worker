@@ -6,10 +6,18 @@ from app.artifacts import (
     PCM_SAMPLE_RATE,
     append_pcm_samples,
     convert_pcm_to_mp3,
+    temp_dir,
+    temp_mp3_part_path,
     temp_pcm_path,
     validate_artifact,
 )
 from tests.conftest import isolate_env
+
+
+def test_temp_paths_live_under_data_tmp(tmp_path) -> None:
+    data_dir = str(tmp_path)
+    assert temp_pcm_path(data_dir, "task-1") == temp_dir(data_dir) / "task-1.pcm"
+    assert temp_mp3_part_path(data_dir, "task-1") == temp_dir(data_dir) / "task-1.part.mp3"
 
 
 def test_append_pcm_samples_appends_binary(tmp_path) -> None:
@@ -18,6 +26,7 @@ def test_append_pcm_samples_appends_binary(tmp_path) -> None:
     append_pcm_samples(path, [42, -42])
     data = path.read_bytes()
     assert data == struct.pack("<5h", 0, 1000, -1000, 42, -42)
+    assert path.parent.name == "tmp"
 
 
 def test_convert_pcm_to_mp3(tmp_path, monkeypatch) -> None:
