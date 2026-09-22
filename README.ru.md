@@ -174,6 +174,13 @@ docker compose up --build
 | 404 | `not_found` | Неизвестная задача |
 | 409 | `task_running` | Конфликт операции |
 
+## Репозиторий
+
+- **GitLab (основной):** [gitlab.it.realweb.ru/dude75/icapture-worker](https://gitlab.it.realweb.ru/dude75/icapture-worker) — эталонная копия для деплоя в Realweb.
+- **GitHub (опциональное зеркало):** [github.com/dude75/icapture-worker](https://github.com/dude75/icapture-worker) — публичная копия для ссылок и внешних читателей; для запуска worker не обязательна. Зеркало синхронизируется по возможности и может отставать от GitLab.
+
+Та же схема, что у [itranscribe-worker](https://github.com/dude75/itranscribe-worker) и [isummarize-worker](https://github.com/dude75/isummarize-worker).
+
 ## Тесты
 
 ```bash

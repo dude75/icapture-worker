@@ -174,6 +174,13 @@ The image sets `WORKERS=2` and `WORKER_QUEUE_SIZE=0` unless overridden in `.env`
 
 After `TASK_TTL_SEC`, finished tasks are removed from the DB and disk — `GET /tasks/{id}` and download return **404** (`not_found`).
 
+## Repository
+
+- **GitLab (primary):** [gitlab.it.realweb.ru/dude75/icapture-worker](https://gitlab.it.realweb.ru/dude75/icapture-worker) — authoritative tree for Realweb deployments.
+- **GitHub (optional mirror):** [github.com/dude75/icapture-worker](https://github.com/dude75/icapture-worker) — public copy for links and external readers; not required to run the worker. The mirror is synced when possible and may lag behind GitLab.
+
+Same layout as [itranscribe-worker](https://github.com/dude75/itranscribe-worker) and [isummarize-worker](https://github.com/dude75/isummarize-worker).
+
 ## Tests
 
 ```bash
