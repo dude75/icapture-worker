@@ -51,12 +51,8 @@ data/**
 !data/logs/
 !data/logs/.gitkeep
 
-# Node deps / caches
+# Node deps / caches (if added later)
 node_modules/
-web/node_modules/
-web/dist/
-web/dist-ssr/
-web/.vite/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*

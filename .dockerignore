@@ -6,4 +6,3 @@ tests
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
-node/jitsi/node_modules

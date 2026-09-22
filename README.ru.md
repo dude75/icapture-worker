@@ -35,8 +35,7 @@ Hub / curl  →  Python FastAPI (:8000)
                └─ Playwright Chromium → Jitsi Meet (web-клиент)
 ```
 
-- **Один процесс** — без Node sidecar; захват в `app/capture/` (`browser.py`, `engine.py`).
-- **`node/jitsi/`** — legacy lib-jitsi-meet + wrtc; **не** подключён к `python -m app.serve`.
+- **Один процесс** — захват в `app/capture/` (`browser.py`, `engine.py`).
 
 ## Установка (один раз)
 
