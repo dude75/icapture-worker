@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
-import struct
-import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
 
 from app.artifacts import (
-    PCM_SAMPLE_RATE,
+    append_pcm_samples,
     artifact_path,
-    convert_wav_to_mp3,
-    temp_wav_path,
+    convert_pcm_to_mp3,
+    temp_pcm_path,
 )
 from app.config import Settings
 
@@ -129,6 +128,20 @@ _DISCONNECT_WATCH_JS = """
 
 _READ_DISCONNECT_REASON_JS = "() => window.__icaptureDisconnect?.reason ?? null"
 
+_DRAIN_PCM_JS = """
+() => {
+  const cap = window.__icapture;
+  if (!cap?.flushInt16Pcm) {
+    return { pcm: [], samples: 0, sinks: 0 };
+  }
+  return {
+    pcm: Array.from(cap.flushInt16Pcm()),
+    samples: cap.sampleCount?.() ?? 0,
+    sinks: cap.sinkCount?.() ?? 0,
+  };
+}
+"""
+
 
 def build_meeting_url(meeting_host: str, meeting_room: str, display_name: str) -> str:
     room = quote(meeting_room)
@@ -162,6 +175,9 @@ class BrowserCaptureSession:
     _browser: object | None = None
     _context: object | None = None
     _page: object | None = None
+    _pcm_path: Path | None = field(default=None, init=False, repr=False)
+    _spool_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _spooled_samples: int = field(default=0, init=False, repr=False)
 
     async def open_and_join(self) -> None:
         from playwright.async_api import async_playwright
@@ -199,6 +215,9 @@ class BrowserCaptureSession:
               }
             }"""
         )
+        self._pcm_path = temp_pcm_path(self.settings.DATA_DIR, self.task_id)
+        self._pcm_path.parent.mkdir(parents=True, exist_ok=True)
+        self._spool_task = asyncio.create_task(self._pcm_spool_loop())
         logger.info(
             "browser capture joined %s/%s task=%s slot=%s",
             self.meeting_host,
@@ -366,43 +385,67 @@ class BrowserCaptureSession:
             except Exception:
                 continue
 
-    async def finalize_to_mp3(self) -> Path:
-        if not self._page:
-            raise RuntimeError("browser page not open")
-        drained = await self._page.evaluate(
-            """() => {
-              const cap = window.__icapture;
-              if (!cap?.flushInt16Pcm) {
-                return { pcm: [], samples: 0, sinks: 0 };
-              }
-              return {
-                pcm: Array.from(cap.flushInt16Pcm()),
-                samples: cap.sampleCount?.() ?? 0,
-                sinks: cap.sinkCount?.() ?? 0,
-              };
-            }"""
-        )
-        samples = int(drained.get("samples") or 0)
-        sinks = int(drained.get("sinks") or 0)
+    async def _pcm_spool_loop(self) -> None:
+        interval = self.settings.CAPTURE_PCM_SPOOL_INTERVAL_SEC
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self._spool_pcm_chunk()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if self._page is None:
+                    return
+                logger.warning("pcm spool failed task=%s: %s", self.task_id, exc)
+
+    async def _spool_pcm_chunk(self) -> int:
+        if not self._page or self._pcm_path is None:
+            return 0
+        drained = await self._page.evaluate(_DRAIN_PCM_JS)  # type: ignore[union-attr]
         pcm_list = drained.get("pcm") or []
+        if pcm_list:
+            await asyncio.to_thread(append_pcm_samples, self._pcm_path, pcm_list)
+            self._spooled_samples += len(pcm_list)
+        return len(pcm_list)
+
+    async def _stop_pcm_spool(self) -> None:
+        task = self._spool_task
+        self._spool_task = None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def finalize_to_mp3(self) -> Path:
+        if self._pcm_path is None:
+            raise RuntimeError("browser capture not started")
+        await self._stop_pcm_spool()
+        sinks = 0
+        final_pcm: list[int] = []
+        if self._page:
+            drained = await self._page.evaluate(_DRAIN_PCM_JS)  # type: ignore[union-attr]
+            sinks = int(drained.get("sinks") or 0)
+            final_pcm = drained.get("pcm") or []
+            if final_pcm:
+                await asyncio.to_thread(append_pcm_samples, self._pcm_path, final_pcm)
+                self._spooled_samples += len(final_pcm)
         logger.info(
-            "browser capture finalize task=%s sinks=%s samples=%s pcm=%s",
+            "browser capture finalize task=%s sinks=%s spooled=%s final_pcm=%s",
             self.task_id,
             sinks,
-            samples,
-            len(pcm_list),
+            self._spooled_samples,
+            len(final_pcm),
         )
-        wav_path = temp_wav_path(self.settings.DATA_DIR, self.task_id)
+        pcm_path = self._pcm_path
         mp3_path = artifact_path(self.settings.DATA_DIR, self.task_id)
-        if pcm_list:
-            await asyncio.to_thread(_write_pcm_wav, wav_path, pcm_list)
-        else:
+        if not pcm_path.is_file() or pcm_path.stat().st_size == 0:
             raise ValueError("no remote audio captured")
-        await asyncio.to_thread(convert_wav_to_mp3, wav_path, mp3_path)
-        wav_path.unlink(missing_ok=True)
+        await asyncio.to_thread(convert_pcm_to_mp3, pcm_path, mp3_path)
+        pcm_path.unlink(missing_ok=True)
         return mp3_path
 
     async def close(self) -> None:
+        await self._stop_pcm_spool()
         page = self._page
         context = self._context
         browser = self._browser
@@ -427,16 +470,6 @@ class BrowserCaptureSession:
         except Exception as exc:
             logger.debug("playwright stop: %s", exc)
         del page
-
-
-def _write_pcm_wav(path: Path, pcm_samples: list[int]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(PCM_SAMPLE_RATE)
-        frames = struct.pack(f"<{len(pcm_samples)}h", *pcm_samples)
-        wf.writeframes(frames)
 
 
 async def check_browser_ready() -> tuple[bool, str | None]:

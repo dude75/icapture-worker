@@ -25,6 +25,10 @@ def temp_wav_path(data_dir: str, task_id: str) -> Path:
     return Path(data_dir) / "artifacts" / f"{task_id}.pcm.wav"
 
 
+def temp_pcm_path(data_dir: str, task_id: str) -> Path:
+    return Path(data_dir) / "artifacts" / f"{task_id}.pcm"
+
+
 def ensure_artifacts_dir(data_dir: str) -> Path:
     path = Path(data_dir) / "artifacts"
     path.mkdir(parents=True, exist_ok=True)
@@ -48,6 +52,47 @@ def _run_ffmpeg(args: list[str]) -> None:
 
 def artifact_part_path(mp3_path: Path) -> Path:
     return mp3_path.with_name(f"{mp3_path.stem}.part{mp3_path.suffix}")
+
+
+def append_pcm_samples(path: Path, pcm_samples: list[int]) -> None:
+    if not pcm_samples:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as handle:
+        handle.write(struct.pack(f"<{len(pcm_samples)}h", *pcm_samples))
+
+
+def convert_pcm_to_mp3(pcm_path: Path, mp3_path: Path) -> None:
+    settings = get_settings()
+    mp3_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = artifact_part_path(mp3_path)
+    if tmp_path.exists():
+        tmp_path.unlink()
+    try:
+        _run_ffmpeg(
+            [
+                "-y",
+                "-f",
+                "s16le",
+                "-ar",
+                str(PCM_SAMPLE_RATE),
+                "-ac",
+                "1",
+                "-i",
+                str(pcm_path),
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                str(settings.FFMPEG_MP3_VBR_QUALITY),
+                "-ar",
+                str(settings.ARTIFACT_SAMPLE_RATE),
+                str(tmp_path),
+            ]
+        )
+        tmp_path.replace(mp3_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def convert_wav_to_mp3(wav_path: Path, mp3_path: Path) -> None:
