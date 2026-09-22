@@ -68,7 +68,8 @@ Example `connectors` (objects with `status`, `label`; `reason` only when `unavai
   "workers": { "max": 2, "active": 0, "available": 2 },
   "connectors": {
     "jitsi": { "status": "loaded", "label": "Jitsi Meet" },
-    "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" }
+    "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" },
+    "meet": { "status": "unavailable", "label": "Google Meet", "reason": "not_implemented" }
   }
 }
 ```
@@ -81,8 +82,10 @@ Start capture:
 curl -s -X POST http://127.0.0.1:8000/capture \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":""}'
+  -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":"","display_name":"Transcription Bot"}'
 ```
+
+Optional body fields: `pin` (lobby password), `display_name` (defaults to `DEFAULT_BOT_DISPLAY_NAME`). Field `jwt` is accepted for API compatibility but not used by the Playwright Jitsi path yet.
 
 The bot joins the Jitsi room via the web UI (prejoin skipped where possible, mic muted). Stop manually → `POST /tasks/{id}/stop` → download `.mp3`, or wait for auto-finalize after kick / timeout.
 
@@ -106,6 +109,11 @@ If `GET /health` shows `jitsi.status: unavailable`, check `reason` (often missin
 | `DEFAULT_BOT_DISPLAY_NAME` | `Transcription Bot` | Bot name in room |
 | `PLAYWRIGHT_HEADLESS` | `true` | Headless Chromium; set `false` for local UI debugging |
 | `LOG_DIR` | `./data/logs` | Join debug screenshots on timeout |
+| `SQLITE_PATH` | `./data/tasks.db` | Task store (under `DATA_DIR` in Docker) |
+| `LOG_LEVEL` | `info` | App log level |
+| `METRICS_ENABLED` | `true` | Application Prometheus collectors |
+| `ARTIFACT_SAMPLE_RATE` | `44100` | MP3 pipeline sample rate (fixed at 44100) |
+| `FFMPEG_MP3_VBR_QUALITY` | `2` | libmp3lame VBR quality (`0` best … `9` worst) |
 
 ## API summary
 
@@ -122,7 +130,7 @@ Auth: `Authorization: Bearer <API_TOKEN>` on private endpoints.
 | DELETE | `/tasks/{id}` | Cancel without artifact |
 | GET | `/metrics` | Prometheus (`METRICS_TOKEN`) |
 
-Task statuses: `capturing` → `finalizing` → `success` | `error` | `canceled`.
+Task statuses: `queued` → `joining` → `capturing` → `finalizing` → `success` | `error` | `canceled` (`queued` only when `WORKER_QUEUE_SIZE` > 0 and all worker slots are busy).
 
 ## Attach to idigest-hub
 
@@ -150,6 +158,8 @@ docker compose up --build
 ```
 
 Service: `icapture-worker` (API + Playwright/Chromium in one container, port 8000). Browsers are installed at image build time (`playwright install-deps` + `chromium` + `chromium-headless-shell`).
+
+The image sets `WORKERS=2` and `WORKER_QUEUE_SIZE=0` unless overridden in `.env`.
 
 ## Typical errors
 

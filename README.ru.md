@@ -68,7 +68,8 @@ curl -s http://127.0.0.1:8000/health | jq
   "workers": { "max": 2, "active": 0, "available": 2 },
   "connectors": {
     "jitsi": { "status": "loaded", "label": "Jitsi Meet" },
-    "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" }
+    "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" },
+    "meet": { "status": "unavailable", "label": "Google Meet", "reason": "not_implemented" }
   }
 }
 ```
@@ -81,8 +82,10 @@ curl -s http://127.0.0.1:8000/health | jq
 curl -s -X POST http://127.0.0.1:8000/capture \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":""}'
+  -d '{"connector":"jitsi","meeting_url":"https://meet.example.com/RoomName","pin":"","display_name":"Transcription Bot"}'
 ```
+
+Опционально в теле: `pin` (пароль lobby), `display_name` (по умолчанию `DEFAULT_BOT_DISPLAY_NAME`). Поле `jwt` принимается для совместимости API, но в Playwright-пути Jitsi пока не используется.
 
 Бот заходит через web UI Jitsi (prejoin по возможности пропускается, микрофон muted). Ручной stop → `POST /tasks/{id}/stop` → download `.mp3`, либо auto-finalize после kick / таймаута.
 
@@ -94,14 +97,23 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 |------------|--------------|------------|
 | `API_TOKEN` | — | Bearer Hub → worker |
 | `METRICS_TOKEN` | — | Bearer для Prometheus |
+| `HOST` | `0.0.0.0` | Адрес bind |
+| `PORT` | `8000` | HTTP-порт |
+| `DATA_DIR` | `./data` | Артефакты и SQLite |
 | `WORKERS` | `2` | Параллельные захваты в процессе |
 | `WORKER_QUEUE_SIZE` | `0` | Доп. принятие в `queued` сверх `WORKERS` (0 — для idigest-hub) |
 | `ENABLED_CONNECTORS` | `jitsi` | Какие коннекторы принимает инстанс |
 | `MAX_CAPTURE_DURATION_SEC` | `14400` | Auto-stop 4ч (`0` = выкл.) |
 | `CAPTURE_FINALIZE_TIMEOUT_SEC` | `120` | Лимит ожидания финализации после auto-stop |
 | `TASK_TTL_SEC` | `3600` | Удаление завершённых задач и файлов артефактов |
+| `DEFAULT_BOT_DISPLAY_NAME` | `Transcription Bot` | Имя бота в комнате |
 | `PLAYWRIGHT_HEADLESS` | `true` | Headless Chromium; `false` — отладка с UI |
 | `LOG_DIR` | `./data/logs` | Скриншоты при таймауте join |
+| `SQLITE_PATH` | `./data/tasks.db` | Хранилище задач (в Docker — под `DATA_DIR`) |
+| `LOG_LEVEL` | `info` | Уровень логов |
+| `METRICS_ENABLED` | `true` | Прикладные Prometheus-коллекторы |
+| `ARTIFACT_SAMPLE_RATE` | `44100` | Sample rate MP3 (только 44100) |
+| `FFMPEG_MP3_VBR_QUALITY` | `2` | Качество libmp3lame VBR (`0` лучше … `9` хуже) |
 
 ## API
 
@@ -110,12 +122,15 @@ Auth: `Authorization: Bearer <API_TOKEN>`.
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/health` | Без token; `connectors`, `workers` (max/active/available) |
+| GET | `/tasks` | Список задач (probe) |
 | POST | `/capture` | Старт захвата (**202**) |
 | GET | `/tasks/{id}` | Poll статуса |
 | POST | `/tasks/{id}/stop` | Graceful stop (**202**) |
 | GET | `/tasks/{id}/download` | `.mp3` при `success` |
 | DELETE | `/tasks/{id}` | Cancel без artifact |
 | GET | `/metrics` | Prometheus (`METRICS_TOKEN`) |
+
+Статусы задачи: `queued` → `joining` → `capturing` → `finalizing` → `success` | `error` | `canceled` (`queued` — только при `WORKER_QUEUE_SIZE` > 0 и занятых слотах).
 
 После `TASK_TTL_SEC` завершённые задачи удаляются из БД и с диска — `GET /tasks/{id}` и download → **404** (`not_found`).
 
@@ -146,8 +161,23 @@ docker compose up --build
 
 Сервис `icapture-worker`: API + Playwright/Chromium в одном контейнере (порт 8000). Браузеры — на этапе сборки образа.
 
+В образе по умолчанию `WORKERS=2` и `WORKER_QUEUE_SIZE=0`, если не переопределить в `.env`.
+
+## Типичные ошибки
+
+| HTTP | `error.code` | Когда |
+|------|--------------|-------|
+| 401 | `unauthorized` | Неверный или отсутствующий token |
+| 503 | `queue_full` | Нет свободных слотов захвата |
+| 400 | `unsupported_connector` | Неизвестный connector |
+| 400 | `invalid_url` | Некорректный URL встречи |
+| 422 | `join_failed` | Не удалось зайти в комнату |
+| 404 | `not_found` | Неизвестная задача |
+| 409 | `task_running` | Конфликт операции |
+
 ## Тесты
 
 ```bash
+./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/pytest
 ```
