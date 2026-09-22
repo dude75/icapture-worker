@@ -158,7 +158,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Сервис `icapture-worker`: API + Playwright/Chromium в одном контейнере. Внутри контейнера API слушает **8000**; с хоста — `HOST_PORT` или `PORT` из `.env` (например `HOST_PORT=9000` → `http://localhost:9000`). Не меняйте `PORT` только ради внешнего порта — иначе проброс портов и nginx/upstream дадут **502**. Браузеры — на этапе сборки образа.
+Сервис `icapture-worker`: API + Playwright/Chromium в одном контейнере. `PORT` в `.env` — порт приложения и проброс Compose (`PORT:PORT`, по умолчанию 8000). Браузеры — на этапе сборки образа.
 
 В образе по умолчанию `WORKERS=2` и `WORKER_QUEUE_SIZE=0`, если не переопределить в `.env`.
 

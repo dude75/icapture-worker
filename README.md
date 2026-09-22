@@ -156,7 +156,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Service: `icapture-worker` (API + Playwright/Chromium in one container). The app listens on **8000 inside the container**; on the host, publish via `HOST_PORT` or `PORT` in `.env` (e.g. `HOST_PORT=9000` → `http://localhost:9000`). Do not raise in-container `PORT` just for an external port — port mapping and nginx/upstream will return **502**. Browsers are installed at image build time (`playwright install-deps` + `chromium` + `chromium-headless-shell`).
+Service: `icapture-worker` (API + Playwright/Chromium in one container). Set `PORT` in `.env` for the listen port and Compose publish (symmetric `PORT:PORT`, default 8000). Browsers are installed at image build time (`playwright install-deps` + `chromium` + `chromium-headless-shell`).
 
 The image sets `WORKERS=2` and `WORKER_QUEUE_SIZE=0` unless overridden in `.env`.
 

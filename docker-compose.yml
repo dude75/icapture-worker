@@ -4,12 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      # Host publish port (HOST_PORT or legacy PORT from .env) → app always :8000 in container
-      - "${HOST_PORT:-${PORT:-8000}}:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     env_file:
       - .env
     environment:
-      PORT: "8000"
       PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
       DATA_DIR: /data
       SQLITE_PATH: /data/tasks.db
