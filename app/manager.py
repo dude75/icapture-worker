@@ -11,7 +11,7 @@ from app.artifact_cleanup import remove_task_artifacts
 from app.artifacts import artifact_path, ensure_artifacts_dir, ensure_tmp_dir, validate_artifact
 from app.capture import browser as browser_capture
 from app.config import Settings, get_settings
-from app.url_parser import InvalidMeetingUrl, parse_meeting_url
+from app.url_parser import InvalidMeetingUrl, parse_capture_url
 from app.prometheus_metrics import observe_finalize, observe_task_transition
 from app.queueing import CaptureRunner, QueueFullError, TaskConflictError
 from app.schemas import CaptureRequest, ConnectorStatus, ErrorCode, ErrorDetail, TaskStatus
@@ -24,7 +24,7 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-SUPPORTED_CONNECTORS = {"jitsi", "zoom", "meet"}
+SUPPORTED_CONNECTORS = {"jitsi", "telemost", "zoom", "meet"}
 
 
 class CaptureManager:
@@ -61,26 +61,34 @@ class CaptureManager:
     def connector_status(self) -> dict[str, dict[str, str | None]]:
         enabled = self.settings.enabled_connectors
         result: dict[str, dict[str, str | None]] = {}
-        for name in ("jitsi", "zoom", "meet"):
+        labels = {
+            "jitsi": "Jitsi Meet",
+            "telemost": "Yandex Telemost",
+            "zoom": "Zoom",
+            "meet": "Google Meet",
+        }
+        browser_connectors = {"jitsi", "telemost"}
+        for name in ("jitsi", "telemost", "zoom", "meet"):
+            label = labels[name]
             if name not in enabled:
                 result[name] = {
                     "status": ConnectorStatus.unavailable.value,
-                    "label": name,
+                    "label": label,
                     "reason": "disabled",
                 }
-            elif name == "jitsi":
+            elif name in browser_connectors:
                 if self._browser_ok:
-                    result[name] = {"status": ConnectorStatus.loaded.value, "label": "Jitsi Meet"}
+                    result[name] = {"status": ConnectorStatus.loaded.value, "label": label}
                 else:
                     result[name] = {
                         "status": ConnectorStatus.unavailable.value,
-                        "label": "Jitsi Meet",
+                        "label": label,
                         "reason": self._browser_reason or "browser_unavailable",
                     }
             else:
                 result[name] = {
                     "status": ConnectorStatus.unavailable.value,
-                    "label": name,
+                    "label": label,
                     "reason": "not_implemented",
                 }
         return result
@@ -108,14 +116,14 @@ class CaptureManager:
             raise ValueError(ErrorCode.unsupported_connector)
         if connector not in self.settings.enabled_connectors:
             raise ValueError(ErrorCode.unsupported_connector)
-        if connector != "jitsi":
+        if connector not in {"jitsi", "telemost"}:
             raise ValueError(ErrorCode.unsupported_connector)
 
         display_name = (request.display_name or self.settings.DEFAULT_BOT_DISPLAY_NAME).strip()
         pin = request.pin or ""
 
         try:
-            parse_meeting_url(request.meeting_url)
+            parse_capture_url(connector, request.meeting_url)
         except InvalidMeetingUrl as exc:
             raise ValueError(ErrorCode.invalid_url) from exc
 

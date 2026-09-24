@@ -35,7 +35,9 @@ Hub / curl  →  Python FastAPI (:8000)
                └─ Playwright Chromium → Jitsi Meet (web-клиент)
 ```
 
-- **Один процесс** — захват в `app/capture/` (`browser.py`, `engine.py`).
+- **Один процесс** — захват в `app/capture/` (`browser.py`, `telemost.py`, `engine.py`).
+
+Коннекторы (Jitsi, Telemost): [docs/ru/connectors.md](docs/ru/connectors.md).
 
 ## Установка (один раз)
 
@@ -88,6 +90,17 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 
 Бот заходит через web UI Jitsi (prejoin по возможности пропускается, микрофон muted). Ручной stop → `POST /tasks/{id}/stop` → download `.mp3`, либо auto-finalize после kick / таймаута.
 
+**Yandex Telemost** — тот же lifecycle задач (`POST /capture` … `stop` / auto-finalize). В `.env`: `ENABLED_CONNECTORS=jitsi,telemost`. Тело:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/capture \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"connector":"telemost","meeting_url":"https://telemost.yandex.ru/j/XXXXXXXXXXXX","display_name":"Transcription Bot"}'
+```
+
+Гостевая ссылка `/j/<id>` или `/private-join/<id>`. Поле `pin` не используется. PCM пишется так же, как у Jitsi: периодический drain из `__icapture` → append в `{task_id}.pcm` → MP3 при finalize.
+
 Если `GET /health` → `jitsi.status: unavailable`, смотрите `reason` (часто нет Chromium — `playwright install` выше).
 
 ## `.env`
@@ -113,6 +126,10 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 | `METRICS_ENABLED` | `true` | Прикладные Prometheus-коллекторы |
 | `ARTIFACT_SAMPLE_RATE` | `44100` | Sample rate MP3 (только 44100) |
 | `FFMPEG_MP3_VBR_QUALITY` | `2` | Качество libmp3lame VBR (`0` лучше … `9` хуже) |
+| `TELEMOST_JOIN_TIMEOUT_SEC` | `180` | Таймаут join Telemost (комната ожидания) |
+| `TELEMOST_STORAGE_STATE` | — | Playwright storage (опционально, Yandex session) |
+| `TELEMOST_CDP_GRANT` | `true` | CDP `audioCapture` для Telemost |
+| `TELEMOST_GUM_FALLBACK` | `true` | Dummy tracks при отказе getUserMedia |
 
 ## API
 
@@ -180,6 +197,20 @@ docker compose up --build
 - **GitHub (опциональное зеркало):** [github.com/dude75/icapture-worker](https://github.com/dude75/icapture-worker) — публичная копия для ссылок и внешних читателей; для запуска worker не обязательна. Зеркало синхронизируется по возможности и может отставать от GitLab.
 
 Та же схема, что у [itranscribe-worker](https://github.com/dude75/itranscribe-worker) и [isummarize-worker](https://github.com/dude75/isummarize-worker).
+
+## SPIKE: Yandex Telemost (ручная проверка)
+
+Дублирует production-путь для отладки UI; основной поток — `connector: telemost` и `POST /capture`. Не входит в `pytest`.
+
+```bash
+export TELEMOST_MEETING_URL='https://telemost.yandex.ru/j/XXXXXXXXXXXX'
+export PLAYWRIGHT_HEADLESS=false
+./.venv/bin/python scripts/spike_telemost_join.py
+```
+
+Скриншоты: `LOG_DIR/spike-telemost-*.png`. Если включена комната ожидания — впустите бота; таймаут join: `SPIKE_JOIN_TIMEOUT_SEC` (по умолчанию 180).
+
+Как Jitsi: Chromium с fake media flags; для Телемоста дополнительно CDP `Browser.grantPermissions` и fallback `getUserMedia` (`TELEMOST_CDP_GRANT`, `TELEMOST_GUM_FALLBACK`, по умолчанию включены). Jitsi-путь в worker пока без CDP — только flags + `grant_permissions`.
 
 ## Тесты
 

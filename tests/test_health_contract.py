@@ -21,7 +21,7 @@ def test_health_workers_invariants(client: TestClient) -> None:
 
 def test_health_connectors_catalog_keys(client: TestClient) -> None:
     connectors = client.get("/health").json()["connectors"]
-    assert set(connectors) >= {"jitsi", "zoom", "meet"}
+    assert set(connectors) >= {"jitsi", "telemost", "zoom", "meet"}
     for item in connectors.values():
         assert item["status"] in {"loaded", "unavailable"}
         assert item["label"]

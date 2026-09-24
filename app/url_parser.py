@@ -26,3 +26,18 @@ def parse_meeting_url(meeting_url: str) -> tuple[str, str]:
     if not room:
         raise InvalidMeetingUrl("missing room name")
     return host, room
+
+
+def parse_capture_url(connector: str, meeting_url: str) -> tuple[str, str]:
+    """Parse meeting URL for a connector into (host, room_or_meeting_id)."""
+    name = connector.strip().lower()
+    if name == "telemost":
+        from app.capture.telemost import telemost_meeting_id, validate_telemost_meeting_url
+
+        normalized = validate_telemost_meeting_url(meeting_url)
+        parsed = urlparse(normalized)
+        host = (parsed.hostname or "").lower()
+        if not host:
+            raise InvalidMeetingUrl("missing host")
+        return host, telemost_meeting_id(normalized)
+    return parse_meeting_url(meeting_url)

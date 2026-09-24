@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.capture import browser as browser_module
+from app.capture import telemost as telemost_module
 from app.config import get_settings
 
 _FAKE_MEETING = Path(__file__).resolve().parent / "fixtures" / "fake_meeting.html"
@@ -21,7 +22,12 @@ def _browser_test_meeting() -> Iterator[None]:
         del meeting_host, meeting_room, display_name
         return _FAKE_MEETING.as_uri()
 
+    def _test_private_join(meeting_url: str) -> str:
+        del meeting_url
+        return _FAKE_MEETING.as_uri()
+
     browser_module.build_meeting_url = _test_url  # type: ignore[method-assign]
+    telemost_module.build_private_join_url = _test_private_join  # type: ignore[method-assign]
 
     async def _browser_ready() -> tuple[bool, str | None]:
         return True, None
@@ -58,6 +64,7 @@ def isolate_env(
     monkeypatch.setenv("WORKER_QUEUE_SIZE", worker_queue_size)
     monkeypatch.setenv("TASK_TTL_SEC", "3600")
     monkeypatch.setenv("MAX_CAPTURE_DURATION_SEC", "300")
+    monkeypatch.setenv("ENABLED_CONNECTORS", "jitsi")
     if extra:
         for key, value in extra.items():
             monkeypatch.setenv(key, value)

@@ -16,6 +16,13 @@ from app.artifacts import (
     convert_pcm_to_mp3,
     temp_pcm_path,
 )
+from app.capture import telemost as telemost_capture
+from app.capture.playwright_media import (
+    CHROMIUM_CAPTURE_ARGS,
+    grant_origin_media_permissions,
+    grant_origin_media_permissions_cdp,
+    prepare_media_capture_scripts,
+)
 from app.config import Settings
 
 logger = logging.getLogger("app")
@@ -166,6 +173,7 @@ class BrowserCaptureSession:
     settings: Settings
     task_id: str
     slot: int
+    connector: str
     meeting_host: str
     meeting_room: str
     display_name: str
@@ -179,6 +187,26 @@ class BrowserCaptureSession:
     _spool_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _spooled_samples: int = field(default=0, init=False, repr=False)
 
+    def _is_telemost(self) -> bool:
+        return self.connector.strip().lower() == "telemost"
+
+    def _guest_meeting_url(self) -> str:
+        if self._is_telemost():
+            return f"https://{self.meeting_host}/j/{self.meeting_room}"
+        return build_meeting_url(self.meeting_host, self.meeting_room, self.display_name)
+
+    def _navigate_url(self) -> str:
+        if self._is_telemost():
+            return telemost_capture.build_private_join_url(self._guest_meeting_url())
+        return self._guest_meeting_url()
+
+    async def _script_target(self):
+        if not self._page:
+            raise RuntimeError("browser page not open")
+        if self._is_telemost():
+            return await telemost_capture.resolve_join_surface(self._page)
+        return self._page
+
     async def open_and_join(self) -> None:
         from playwright.async_api import async_playwright
 
@@ -187,27 +215,56 @@ class BrowserCaptureSession:
         chromium = self._playwright.chromium  # type: ignore[union-attr]
         self._browser = await chromium.launch(
             headless=headless,
-            args=[
-                "--use-fake-device-for-media-stream",
-                "--use-fake-ui-for-media-stream",
-                "--autoplay-policy=no-user-gesture-required",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
+            args=list(CHROMIUM_CAPTURE_ARGS),
         )
-        self._context = await self._browser.new_context(  # type: ignore[union-attr]
-            permissions=["microphone", "camera"],
-            ignore_https_errors=True,
-            viewport={"width": 1280, "height": 720},
-            locale="en-US",
-        )
-        await self._context.add_init_script(_load_init_script())  # type: ignore[union-attr]
+        locale = "ru-RU" if self._is_telemost() else "en-US"
+        context_kwargs: dict = {
+            "permissions": ["microphone", "camera"],
+            "ignore_https_errors": True,
+            "viewport": {"width": 1280, "height": 720},
+            "locale": locale,
+        }
+        storage = (self.settings.TELEMOST_STORAGE_STATE or "").strip()
+        if self._is_telemost() and storage:
+            path = Path(storage)
+            if path.is_file():
+                context_kwargs["storage_state"] = str(path)
+        self._context = await self._browser.new_context(**context_kwargs)  # type: ignore[union-attr]
+        if self._is_telemost():
+            await self._context.add_init_script(telemost_capture.TELEMOST_AUDIO_ONLY_INIT_JS)  # type: ignore[union-attr]
+            await prepare_media_capture_scripts(
+                self._context,
+                capture_init_js=_load_init_script(),
+                gum_fallback=self.settings.TELEMOST_GUM_FALLBACK,
+            )
+        else:
+            await self._context.add_init_script(_load_init_script())  # type: ignore[union-attr]
         self._page = await self._context.new_page()  # type: ignore[union-attr]
-        url = build_meeting_url(self.meeting_host, self.meeting_room, self.display_name)
+        if self._is_telemost():
+            origin = telemost_capture.telemost_origin(self._guest_meeting_url())
+            await grant_origin_media_permissions(self._context, origin)
+            if self.settings.TELEMOST_CDP_GRANT:
+                await grant_origin_media_permissions_cdp(self._page, origin)
+
+        url = self._navigate_url()
         await self._page.goto(url, wait_until="domcontentloaded", timeout=60_000)  # type: ignore[union-attr]
-        await self._join_conference(self._page)
-        await self._ensure_mic_muted(self._page)
-        await self._page.evaluate(
+        if self._is_telemost():
+            with contextlib.suppress(Exception):
+                await self._page.wait_for_load_state("networkidle", timeout=45_000)  # type: ignore[union-attr]
+            await asyncio.sleep(2.0)
+            await telemost_capture.join_telemost(
+                self._page,
+                display_name=self.display_name or "Transcription Bot",
+                timeout_sec=self.settings.TELEMOST_JOIN_TIMEOUT_SEC,
+                log_dir=Path(self.settings.LOG_DIR),
+                task_id=self.task_id,
+            )
+        else:
+            await self._join_conference(self._page)
+            await self._ensure_mic_muted(self._page)
+
+        target = await self._script_target()
+        await target.evaluate(
             """async () => {
               const cap = window.__icapture;
               if (cap?.resume) {
@@ -219,7 +276,8 @@ class BrowserCaptureSession:
         self._pcm_path.parent.mkdir(parents=True, exist_ok=True)
         self._spool_task = asyncio.create_task(self._pcm_spool_loop())
         logger.info(
-            "browser capture joined %s/%s task=%s slot=%s",
+            "browser capture joined connector=%s %s/%s task=%s slot=%s",
+            self.connector,
             self.meeting_host,
             self.meeting_room,
             self.task_id,
@@ -230,6 +288,11 @@ class BrowserCaptureSession:
         if not self._page:
             raise RuntimeError("browser page not open")
         page = self._page
+        if self._is_telemost():
+            return await telemost_capture.wait_for_telemost_disconnect(
+                page,
+                poll_interval_sec=poll_interval_sec,
+            )
         await page.evaluate(_DISCONNECT_WATCH_JS)  # type: ignore[union-attr]
         while True:
             if page.is_closed():  # type: ignore[union-attr]
@@ -401,7 +464,8 @@ class BrowserCaptureSession:
     async def _spool_pcm_chunk(self) -> int:
         if not self._page or self._pcm_path is None:
             return 0
-        drained = await self._page.evaluate(_DRAIN_PCM_JS)  # type: ignore[union-attr]
+        target = await self._script_target()
+        drained = await target.evaluate(_DRAIN_PCM_JS)
         pcm_list = drained.get("pcm") or []
         if pcm_list:
             await asyncio.to_thread(append_pcm_samples, self._pcm_path, pcm_list)
@@ -423,7 +487,8 @@ class BrowserCaptureSession:
         sinks = 0
         final_pcm: list[int] = []
         if self._page:
-            drained = await self._page.evaluate(_DRAIN_PCM_JS)  # type: ignore[union-attr]
+            target = await self._script_target()
+            drained = await target.evaluate(_DRAIN_PCM_JS)
             sinks = int(drained.get("sinks") or 0)
             final_pcm = drained.get("pcm") or []
             if final_pcm:

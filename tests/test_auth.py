@@ -39,6 +39,8 @@ def test_health_is_public(client: TestClient) -> None:
         "label": "Jitsi Meet",
     }
     assert "reason" not in body["connectors"]["jitsi"]
+    assert body["connectors"]["telemost"]["status"] == "unavailable"
+    assert body["connectors"]["telemost"]["reason"] == "disabled"
     assert body["connectors"]["zoom"]["status"] == "unavailable"
     assert body["connectors"]["zoom"]["reason"] in {"not_implemented", "disabled"}
     assert body["workers"] == {"max": 2, "active": 0, "available": 2}

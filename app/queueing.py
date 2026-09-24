@@ -12,7 +12,7 @@ from app.config import Settings, get_settings
 from app.prometheus_metrics import observe_task_transition
 from app.schemas import ErrorCode, ErrorDetail, TaskStatus
 from app.tasks import TaskRecord, TaskStore
-from app.url_parser import InvalidMeetingUrl, parse_meeting_url
+from app.url_parser import InvalidMeetingUrl, parse_capture_url
 
 logger = logging.getLogger("app")
 
@@ -118,7 +118,7 @@ class CaptureRunner:
         jwt: str | None,
     ) -> TaskRecord:
         try:
-            meeting_host, meeting_room = parse_meeting_url(meeting_url)
+            meeting_host, meeting_room = parse_capture_url(connector, meeting_url)
         except InvalidMeetingUrl as exc:
             raise ValueError(ErrorCode.invalid_url) from exc
         return await self.submit(
@@ -174,6 +174,7 @@ class CaptureRunner:
                 await self.engine.run_capture(
                     task_id,
                     slot,
+                    connector=record.connector,
                     meeting_host=record.meeting_host,
                     meeting_room=record.meeting_room,
                     display_name=record.display_name,

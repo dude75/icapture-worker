@@ -34,6 +34,45 @@ def test_delete_during_capturing(client: TestClient) -> None:
     assert download.status_code == 404
 
 
+def test_telemost_capture_stop_download(tmp_path, monkeypatch) -> None:
+    isolate_env(
+        tmp_path,
+        monkeypatch,
+        extra={"ENABLED_CONNECTORS": "jitsi,telemost"},
+    )
+    from app.main import app
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/capture",
+            headers=auth_headers(),
+            json={
+                "connector": "telemost",
+                "meeting_url": "https://telemost.yandex.ru/j/16448943383326",
+                "display_name": "Transcription Bot",
+            },
+        )
+        assert response.status_code == 202, response.text
+        task_id = response.json()["meta"]["task_id"]
+        wait_for_task_status(client, task_id, "capturing")
+        body = complete_capture(client, task_id)
+        assert body["artifact"]["ready"] is True
+        assert body["meta"]["connector"] == "telemost"
+
+
+def test_telemost_disabled_by_default(client: TestClient) -> None:
+    response = client.post(
+        "/capture",
+        headers=auth_headers(),
+        json={
+            "connector": "telemost",
+            "meeting_url": "https://telemost.yandex.ru/j/1",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unsupported_connector"
+
+
 def test_unsupported_connector(client: TestClient) -> None:
     response = client.post(
         "/capture",

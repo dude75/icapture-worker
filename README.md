@@ -35,7 +35,9 @@ Hub / curl  →  Python FastAPI (:8000)
                └─ Playwright Chromium → Jitsi Meet (web client)
 ```
 
-- **Single process** — capture lives under `app/capture/` (`browser.py`, `engine.py`).
+- **Single process** — capture lives under `app/capture/` (`browser.py`, `telemost.py`, `engine.py`).
+
+Connectors (Jitsi, Telemost): [docs/en/connectors.md](docs/en/connectors.md).
 
 ## Install (once)
 
@@ -67,6 +69,7 @@ Example `connectors` (objects with `status`, `label`; `reason` only when `unavai
   "workers": { "max": 2, "active": 0, "available": 2 },
   "connectors": {
     "jitsi": { "status": "loaded", "label": "Jitsi Meet" },
+    "telemost": { "status": "unavailable", "label": "Yandex Telemost", "reason": "disabled" },
     "zoom": { "status": "unavailable", "label": "Zoom", "reason": "not_implemented" },
     "meet": { "status": "unavailable", "label": "Google Meet", "reason": "not_implemented" }
   }
@@ -87,6 +90,17 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 Optional body fields: `pin` (lobby password), `display_name` (defaults to `DEFAULT_BOT_DISPLAY_NAME`). Field `jwt` is accepted for API compatibility but not used by the Playwright Jitsi path yet.
 
 The bot joins the Jitsi room via the web UI (prejoin skipped where possible, mic muted). Stop manually → `POST /tasks/{id}/stop` → download `.mp3`, or wait for auto-finalize after kick / timeout.
+
+**Yandex Telemost** uses the same task lifecycle. Set `ENABLED_CONNECTORS=jitsi,telemost` and POST:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/capture \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"connector":"telemost","meeting_url":"https://telemost.yandex.ru/j/XXXXXXXXXXXX","display_name":"Transcription Bot"}'
+```
+
+Guest URLs: `/j/<id>` or `/private-join/<id>`. `pin` is ignored. PCM is spooled the same way as Jitsi (`flushInt16Pcm` → append `{task_id}.pcm` → MP3 on finalize).
 
 If `GET /health` shows `jitsi.status: unavailable`, check `reason` (often missing Chromium — run `playwright install` as above).
 
@@ -113,6 +127,10 @@ If `GET /health` shows `jitsi.status: unavailable`, check `reason` (often missin
 | `METRICS_ENABLED` | `true` | Application Prometheus collectors |
 | `ARTIFACT_SAMPLE_RATE` | `44100` | MP3 pipeline sample rate (fixed at 44100) |
 | `FFMPEG_MP3_VBR_QUALITY` | `2` | libmp3lame VBR quality (`0` best … `9` worst) |
+| `TELEMOST_JOIN_TIMEOUT_SEC` | `180` | Telemost join timeout (waiting room) |
+| `TELEMOST_STORAGE_STATE` | — | Optional Playwright storage (Yandex session) |
+| `TELEMOST_CDP_GRANT` | `true` | CDP `audioCapture` for Telemost |
+| `TELEMOST_GUM_FALLBACK` | `true` | Dummy tracks when getUserMedia fails |
 
 ## API summary
 
@@ -180,6 +198,18 @@ After `TASK_TTL_SEC`, finished tasks are removed from the DB and disk — `GET /
 - **GitHub (optional mirror):** [github.com/dude75/icapture-worker](https://github.com/dude75/icapture-worker) — public copy for links and external readers; not required to run the worker. The mirror is synced when possible and may lag behind GitLab.
 
 Same layout as [itranscribe-worker](https://github.com/dude75/itranscribe-worker) and [isummarize-worker](https://github.com/dude75/isummarize-worker).
+
+## SPIKE: Yandex Telemost
+
+One-off hypothesis check (guest link join + in-page audio mix). Not run by default pytest.
+
+```bash
+export TELEMOST_MEETING_URL='https://telemost.yandex.ru/j/XXXXXXXXXXXX'
+export PLAYWRIGHT_HEADLESS=false
+./.venv/bin/python scripts/spike_telemost_join.py
+```
+
+Screenshots under `LOG_DIR/spike-telemost-*.png`. Admit the bot from the waiting room if enabled (`SPIKE_JOIN_TIMEOUT_SEC`, default 180).
 
 ## Tests
 
