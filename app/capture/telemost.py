@@ -104,7 +104,7 @@ MEETING_STATE_JS = """
     (!waiting &&
       !ended &&
       !prejoinConnect &&
-      (leaveVisible || sinks > 0 || /\\/conference\\//i.test(location.pathname + location.href)));
+      (leaveVisible || sinks > 0));
   return {
     waiting,
     ended,
@@ -202,10 +202,66 @@ def telemost_origin(meeting_url: str) -> str:
 
 
 async def resolve_join_surface(page):
+    """Best frame for Telemost UI + in-page capture (conference > private-join > main)."""
+    conference = None
+    private_join = None
     for frame in page.frames:
-        if "private-join" in frame.url:
-            return frame
+        url = frame.url or ""
+        if "conference" in url and conference is None:
+            conference = frame
+        if "private-join" in url and private_join is None:
+            private_join = frame
+    if conference is not None:
+        return conference
+    if private_join is not None:
+        return private_join
     return page.main_frame
+
+
+async def _eval_on_frames(page, script: str) -> list[dict]:
+    out: list[dict] = []
+    for frame in page.frames:
+        with contextlib.suppress(Exception):
+            value = await frame.evaluate(script)
+            if isinstance(value, dict):
+                out.append(value)
+    return out
+
+
+def _merge_meeting_states(states: list[dict]) -> dict:
+    if not states:
+        return {
+            "waiting": False,
+            "ended": False,
+            "leaveVisible": False,
+            "prejoinConnect": False,
+            "inMeeting": False,
+            "loginRequired": False,
+            "sinks": 0,
+        }
+    merged = dict(states[0])
+    merged["sinks"] = max(int(s.get("sinks") or 0) for s in states)
+    merged["ended"] = any(s.get("ended") for s in states)
+    merged["waiting"] = any(s.get("waiting") for s in states)
+    merged["leaveVisible"] = any(s.get("leaveVisible") for s in states)
+    merged["prejoinConnect"] = any(s.get("prejoinConnect") for s in states)
+    merged["loginRequired"] = any(s.get("loginRequired") for s in states)
+    merged["inMeeting"] = any(s.get("inMeeting") for s in states)
+    return merged
+
+
+async def telemost_meeting_state(page) -> dict:
+    states = await _eval_on_frames(page, MEETING_STATE_JS)
+    return _merge_meeting_states(states)
+
+
+async def telemost_kick_reason(page) -> str | None:
+    for frame in page.frames:
+        with contextlib.suppress(Exception):
+            kick = await frame.evaluate(KICK_CHECK_JS)
+            if kick:
+                return str(kick)
+    return None
 
 
 async def _click_first(page, locator, *, timeout_ms: int = 800, force: bool = False) -> bool:
@@ -375,11 +431,10 @@ async def wait_for_telemost_disconnect(page, poll_interval_sec: float = 1.0) -> 
     while True:
         if page.is_closed():
             return "page_closed"
-        surface = await resolve_join_surface(page)
-        kick = await surface.evaluate(KICK_CHECK_JS)
+        kick = await telemost_kick_reason(page)
         if kick:
             return str(kick)
-        meet = await surface.evaluate(MEETING_STATE_JS)
+        meet = await telemost_meeting_state(page)
         in_call = bool(meet.get("inMeeting"))
         sinks_now = int(meet.get("sinks") or 0)
         if was_in_meeting and meet.get("prejoinConnect"):

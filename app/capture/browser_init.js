@@ -17,11 +17,19 @@
   const chunks = [];
   let totalSamples = 0;
 
+  function detachTrack(track) {
+    if (!track) {
+      return;
+    }
+    connected.delete(track.id);
+  }
+
   function attachTrack(track) {
     if (!track || track.kind !== "audio" || connected.has(track.id)) {
       return;
     }
     connected.add(track.id);
+    track.addEventListener("ended", () => detachTrack(track));
     try {
       const src = ctx.createMediaStreamSource(new MediaStream([track]));
       src.connect(mixGain);

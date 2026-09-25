@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     WORKER_QUEUE_SIZE: int = 0
     ENABLED_CONNECTORS: str = "jitsi"
     CAPTURE_FINALIZE_TIMEOUT_SEC: float = 120
+    CAPTURE_PCM_DRAIN_TIMEOUT_SEC: float = 10.0
     CAPTURE_PCM_SPOOL_INTERVAL_SEC: float = 5.0
     MAX_CAPTURE_DURATION_SEC: float = 14400
     TASK_TTL_SEC: int = 3600
@@ -77,6 +78,13 @@ class Settings(BaseSettings):
     def _positive_pcm_spool_interval(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("CAPTURE_PCM_SPOOL_INTERVAL_SEC must be > 0")
+        return value
+
+    @field_validator("CAPTURE_PCM_DRAIN_TIMEOUT_SEC")
+    @classmethod
+    def _positive_pcm_drain_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("CAPTURE_PCM_DRAIN_TIMEOUT_SEC must be > 0")
         return value
 
     @field_validator("TELEMOST_JOIN_TIMEOUT_SEC")

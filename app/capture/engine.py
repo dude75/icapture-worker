@@ -105,7 +105,9 @@ class CaptureEngine:
             raise
         except Exception as exc:
             logger.warning("disconnect watch failed task=%s: %s", task_id, exc)
-            return
+            if task_id not in self._sessions:
+                return
+            reason = "disconnect_watch_failed"
         if task_id not in self._sessions:
             return
         logger.info("browser capture auto-stop task=%s reason=%s", task_id, reason)
@@ -125,12 +127,17 @@ class CaptureEngine:
         return str(path)
 
     async def cancel(self, task_id: str) -> None:
+        await self.abort_session(task_id)
+
+    async def abort_session(self, task_id: str) -> None:
+        """Release worker slot without producing an artifact (after offline PCM recovery)."""
         auto = self._auto_stop.pop(task_id, None)
         if auto is not None:
             auto.cancel()
         session = self._sessions.pop(task_id, None)
         finished = self._finished.pop(task_id, None)
         if session is not None:
+            session.cancel_pcm_spool()
             await session.close()
         if finished is not None:
             finished.set()

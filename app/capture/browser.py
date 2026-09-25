@@ -207,6 +207,31 @@ class BrowserCaptureSession:
             return await telemost_capture.resolve_join_surface(self._page)
         return self._page
 
+    async def _drain_pcm(self) -> dict:
+        if not self._page:
+            return {"pcm": [], "samples": 0, "sinks": 0}
+        pcm_list: list[int] = []
+        samples = 0
+        sinks = 0
+        deadline = asyncio.get_event_loop().time() + self.settings.CAPTURE_PCM_DRAIN_TIMEOUT_SEC
+        for frame in self._page.frames:  # type: ignore[union-attr]
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                drained = await asyncio.wait_for(
+                    frame.evaluate(_DRAIN_PCM_JS),
+                    timeout=remaining,
+                )
+            except Exception:
+                continue
+            chunk = drained.get("pcm") or []
+            if chunk:
+                pcm_list.extend(chunk)
+            samples += int(drained.get("samples") or 0)
+            sinks = max(sinks, int(drained.get("sinks") or 0))
+        return {"pcm": pcm_list, "samples": samples, "sinks": sinks}
+
     async def open_and_join(self) -> None:
         from playwright.async_api import async_playwright
 
@@ -464,31 +489,46 @@ class BrowserCaptureSession:
     async def _spool_pcm_chunk(self) -> int:
         if not self._page or self._pcm_path is None:
             return 0
-        target = await self._script_target()
-        drained = await target.evaluate(_DRAIN_PCM_JS)
+        drained = await self._drain_pcm()
         pcm_list = drained.get("pcm") or []
         if pcm_list:
             await asyncio.to_thread(append_pcm_samples, self._pcm_path, pcm_list)
             self._spooled_samples += len(pcm_list)
         return len(pcm_list)
 
-    async def _stop_pcm_spool(self) -> None:
+    def cancel_pcm_spool(self) -> None:
+        """Stop spool loop without waiting (Playwright evaluate may hang indefinitely)."""
         task = self._spool_task
         self._spool_task = None
         if task is not None:
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+
+    async def _stop_pcm_spool(self) -> None:
+        task = self._spool_task
+        self.cancel_pcm_spool()
+        if task is None:
+            return
+        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(task, timeout=2.0)
 
     async def finalize_to_mp3(self) -> Path:
         if self._pcm_path is None:
             raise RuntimeError("browser capture not started")
-        await self._stop_pcm_spool()
+        self.cancel_pcm_spool()
         sinks = 0
         final_pcm: list[int] = []
         if self._page:
-            target = await self._script_target()
-            drained = await target.evaluate(_DRAIN_PCM_JS)
+            try:
+                drained = await asyncio.wait_for(
+                    self._drain_pcm(),
+                    timeout=self.settings.CAPTURE_PCM_DRAIN_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "finalize pcm drain timed out task=%s — using spooled file only",
+                    self.task_id,
+                )
+                drained = {"pcm": [], "sinks": 0}
             sinks = int(drained.get("sinks") or 0)
             final_pcm = drained.get("pcm") or []
             if final_pcm:

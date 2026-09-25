@@ -8,7 +8,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.artifact_cleanup import remove_task_artifacts
-from app.artifacts import artifact_path, ensure_artifacts_dir, ensure_tmp_dir, validate_artifact
+from app.artifacts import (
+    artifact_path,
+    convert_pcm_to_mp3,
+    ensure_artifacts_dir,
+    ensure_tmp_dir,
+    temp_pcm_path,
+    validate_artifact,
+)
 from app.capture import browser as browser_capture
 from app.config import Settings, get_settings
 from app.url_parser import InvalidMeetingUrl, parse_capture_url
@@ -33,6 +40,7 @@ class CaptureManager:
         self.runner = CaptureRunner(self.settings)
         self.store = self.runner.store
         self._finalize_tasks: dict[str, asyncio.Task[None]] = {}
+        self._finalize_started_at: dict[str, float] = {}
         self._ttl_task: asyncio.Task[None] | None = None
         self._browser_ok = False
         self._browser_reason: str | None = "startup"
@@ -100,10 +108,14 @@ class CaptureManager:
         return self.runner.worker_pool()
 
     async def reconcile_all(self) -> None:
-        for status in (TaskStatus.error, TaskStatus.finalizing):
+        for status in (TaskStatus.error, TaskStatus.finalizing, TaskStatus.capturing):
             for record in self.store.list_tasks(status):
+                if self.runner.engine.is_active(record.task_id):
+                    continue
                 if await self._try_recover_artifact(record.task_id):
                     logger.info("recovered %s task %s from artifact", status.value, record.task_id)
+                elif await self._try_recover_pcm(record.task_id):
+                    logger.info("recovered %s task %s from spooled pcm", status.value, record.task_id)
 
     async def create_capture(
         self,
@@ -229,7 +241,8 @@ class CaptureManager:
         if record is None:
             return
         if record.status is TaskStatus.error:
-            await self._try_recover_artifact(task_id)
+            if not await self._try_recover_artifact(task_id):
+                await self._try_recover_pcm(task_id)
 
     async def _handle_auto_stop(self, task_id: str, *, reason: str) -> None:
         del reason
@@ -244,8 +257,12 @@ class CaptureManager:
 
     async def _finalize(self, task_id: str) -> None:
         started = asyncio.get_event_loop().time()
+        self._finalize_started_at[task_id] = started
         try:
-            engine_path = await self.runner.engine.stop(task_id)
+            engine_path = await asyncio.wait_for(
+                self.runner.engine.stop(task_id),
+                timeout=self.settings.CAPTURE_FINALIZE_TIMEOUT_SEC,
+            )
             path = Path(engine_path)
             if not path.is_file():
                 path = artifact_path(self.settings.DATA_DIR, task_id)
@@ -259,8 +276,7 @@ class CaptureManager:
             )
             observe_task_transition(TaskStatus.success.value)
         except Exception as exc:
-            if await self._try_recover_artifact(task_id):
-                logger.info("recovered task %s after finalize error: %s", task_id, exc)
+            if await self._recover_after_finalize_failure(task_id, exc):
                 return
             self.store.mark_error(
                 task_id,
@@ -269,7 +285,26 @@ class CaptureManager:
             observe_task_transition(TaskStatus.error.value)
         finally:
             self._finalize_tasks.pop(task_id, None)
+            self._finalize_started_at.pop(task_id, None)
             observe_finalize(asyncio.get_event_loop().time() - started)
+
+    async def _recover_after_finalize_failure(self, task_id: str, exc: Exception) -> bool:
+        if isinstance(exc, asyncio.TimeoutError):
+            logger.warning("finalize timed out task=%s — trying spooled pcm", task_id)
+        session = self.runner.engine._sessions.get(task_id)
+        if session is not None:
+            session.cancel_pcm_spool()
+        if await self._try_recover_artifact(task_id):
+            logger.info("recovered task %s after finalize error: %s", task_id, exc)
+            await self.runner.engine.abort_session(task_id)
+            return True
+        if await self._try_recover_pcm(task_id):
+            logger.info("recovered task %s from spooled pcm after finalize error: %s", task_id, exc)
+            await self.runner.engine.abort_session(task_id)
+            return True
+        if self.runner.engine.is_active(task_id):
+            await self.runner.engine.abort_session(task_id)
+        return False
 
     async def _try_recover_artifact(self, task_id: str) -> bool:
         path = artifact_path(self.settings.DATA_DIR, task_id)
@@ -289,11 +324,64 @@ class CaptureManager:
         observe_task_transition(TaskStatus.success.value)
         return True
 
+    async def _nudge_stuck_finalizing(self) -> None:
+        """Finalize must not block forever on Playwright; recover from spooled PCM."""
+        now = asyncio.get_event_loop().time()
+        grace = self.settings.CAPTURE_FINALIZE_TIMEOUT_SEC + 30.0
+        for record in self.store.list_tasks(TaskStatus.finalizing):
+            started = self._finalize_started_at.get(record.task_id)
+            if started is None:
+                pcm_path = temp_pcm_path(self.settings.DATA_DIR, record.task_id)
+                if pcm_path.is_file():
+                    idle_sec = now - pcm_path.stat().st_mtime
+                    spool_grace = max(30.0, self.settings.CAPTURE_PCM_SPOOL_INTERVAL_SEC * 3)
+                    if idle_sec >= spool_grace:
+                        started = now - grace - 1
+            if started is None or now - started < grace:
+                continue
+            logger.warning(
+                "finalizing exceeded timeout task=%s — forcing pcm recovery",
+                record.task_id,
+            )
+            finalize_task = self._finalize_tasks.get(record.task_id)
+            if finalize_task is not None:
+                finalize_task.cancel()
+            if await self._recover_after_finalize_failure(
+                record.task_id,
+                asyncio.TimeoutError(),
+            ):
+                self._finalize_tasks.pop(record.task_id, None)
+                self._finalize_started_at.pop(record.task_id, None)
+
+    async def _try_recover_pcm(self, task_id: str) -> bool:
+        pcm_path = temp_pcm_path(self.settings.DATA_DIR, task_id)
+        if not pcm_path.is_file() or pcm_path.stat().st_size == 0:
+            return False
+        mp3_path = artifact_path(self.settings.DATA_DIR, task_id)
+        if mp3_path.is_file():
+            return await self._try_recover_artifact(task_id)
+        try:
+            await asyncio.to_thread(convert_pcm_to_mp3, pcm_path, mp3_path)
+            pcm_path.unlink(missing_ok=True)
+            size, duration = await asyncio.to_thread(validate_artifact, mp3_path)
+        except ValueError:
+            return False
+        self.store.mark_success(
+            task_id,
+            stopped_at=_utc_now_iso(),
+            duration_sec=duration,
+            artifact_path=str(mp3_path),
+            artifact_size_bytes=size,
+        )
+        observe_task_transition(TaskStatus.success.value)
+        return True
+
     async def _ttl_loop(self) -> None:
         while True:
             interval = 5 if self.store.count_active() > 0 else 30
             await asyncio.sleep(interval)
             try:
+                await self._nudge_stuck_finalizing()
                 await self.reconcile_all()
             except Exception as exc:
                 logger.warning("reconcile loop failed: %s", exc)
