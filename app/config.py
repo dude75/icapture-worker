@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     DEFAULT_BOT_DISPLAY_NAME: str = "Transcription Bot"
     LOG_LEVEL: str = "info"
     PLAYWRIGHT_HEADLESS: bool = True
+    CONF_JOIN_TIMEOUT_SEC: float = 180
 
-    TELEMOST_JOIN_TIMEOUT_SEC: float = 180
     TELEMOST_STORAGE_STATE: str = ""
     TELEMOST_CDP_GRANT: bool = True
     TELEMOST_GUM_FALLBACK: bool = True
@@ -87,11 +87,11 @@ class Settings(BaseSettings):
             raise ValueError("CAPTURE_PCM_DRAIN_TIMEOUT_SEC must be > 0")
         return value
 
-    @field_validator("TELEMOST_JOIN_TIMEOUT_SEC")
+    @field_validator("CONF_JOIN_TIMEOUT_SEC")
     @classmethod
-    def _positive_telemost_join_timeout(cls, value: float) -> float:
+    def _positive_conf_join_timeout(cls, value: float) -> float:
         if value <= 0:
-            raise ValueError("TELEMOST_JOIN_TIMEOUT_SEC must be > 0")
+            raise ValueError("CONF_JOIN_TIMEOUT_SEC must be > 0")
         return value
 
     @field_validator("TASK_TTL_SEC")

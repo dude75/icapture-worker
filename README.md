@@ -127,7 +127,7 @@ If `GET /health` shows `jitsi.status: unavailable`, check `reason` (often missin
 | `METRICS_ENABLED` | `true` | Application Prometheus collectors |
 | `ARTIFACT_SAMPLE_RATE` | `44100` | MP3 pipeline sample rate (fixed at 44100) |
 | `FFMPEG_MP3_VBR_QUALITY` | `2` | libmp3lame VBR quality (`0` best … `9` worst) |
-| `TELEMOST_JOIN_TIMEOUT_SEC` | `180` | Telemost join timeout (waiting room) |
+| `CONF_JOIN_TIMEOUT_SEC` | `180` | Join timeout (Jitsi prejoin / moderator wait, Telemost waiting room) |
 | `TELEMOST_STORAGE_STATE` | — | Optional Playwright storage (Yandex session) |
 | `TELEMOST_CDP_GRANT` | `true` | CDP `audioCapture` for Telemost |
 | `TELEMOST_GUM_FALLBACK` | `true` | Dummy tracks when getUserMedia fails |

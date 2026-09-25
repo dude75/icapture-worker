@@ -9,6 +9,7 @@ Worker принимает `connector` и полный `meeting_url` в `POST /ca
 - URL: `https://<host>/<room>` (последний сегмент path — имя комнаты).
 - `pin` — пароль lobby Jitsi, если включён на инстансе.
 - Join: web UI, prejoin по возможности, микрофон muted.
+- Join timeout: `CONF_JOIN_TIMEOUT_SEC` (по умолчанию 180 с) — prejoin, ожидание модератора, lobby; иначе `join_failed`.
 - Auto-stop: события JitsiMeetJS, kick по тексту страницы, `conference_left`, `MAX_CAPTURE_DURATION_SEC`.
 
 ## Yandex Telemost (`telemost`)
@@ -16,7 +17,7 @@ Worker принимает `connector` и полный `meeting_url` в `POST /ca
 - URL: гостевая ссылка `https://telemost.yandex.ru/j/<meeting_id>` или `https://telemost.yandex.ru/private-join/<meeting_id>`.
 - `pin` не используется.
 - Join: переход на `private-join` с `mic=off` и `camera=off`; бот только пишет удалённое аудио.
-- Комната ожидания: таймаут `TELEMOST_JOIN_TIMEOUT_SEC` (по умолчанию 180 с); модератор должен впустить бота.
+- Комната ожидания: тот же `CONF_JOIN_TIMEOUT_SEC`; модератор должен впустить бота.
 - Опционально: `TELEMOST_STORAGE_STATE` — файл Playwright storage для сессии Yandex.
 - Auto-stop: kick / end / leave по UI Telemost, падение `sinkCount`, те же finalize и MP3, что у Jitsi.
 

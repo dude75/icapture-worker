@@ -280,12 +280,15 @@ class BrowserCaptureSession:
             await telemost_capture.join_telemost(
                 self._page,
                 display_name=self.display_name or "Transcription Bot",
-                timeout_sec=self.settings.TELEMOST_JOIN_TIMEOUT_SEC,
+                timeout_sec=self.settings.CONF_JOIN_TIMEOUT_SEC,
                 log_dir=Path(self.settings.LOG_DIR),
                 task_id=self.task_id,
             )
         else:
-            await self._join_conference(self._page)
+            await self._join_conference(
+                self._page,
+                timeout_sec=self.settings.CONF_JOIN_TIMEOUT_SEC,
+            )
             await self._ensure_mic_muted(self._page)
 
         target = await self._script_target()
@@ -327,10 +330,10 @@ class BrowserCaptureSession:
                 return str(reason)
             await asyncio.sleep(poll_interval_sec)
 
-    async def _join_conference(self, page, timeout_ms: int = 90_000) -> None:
+    async def _join_conference(self, page, *, timeout_sec: float) -> None:
         """Prejoin UI varies by deployment (e.g. meet.realweb.ru uses aria labels, not testids)."""
         name = self.display_name or "Transcription Bot"
-        deadline = asyncio.get_event_loop().time() + timeout_ms / 1000
+        deadline = asyncio.get_event_loop().time() + timeout_sec
         while asyncio.get_event_loop().time() < deadline:
             if await self._in_meeting(page):
                 return

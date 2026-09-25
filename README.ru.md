@@ -126,7 +126,7 @@ curl -s -X POST http://127.0.0.1:8000/capture \
 | `METRICS_ENABLED` | `true` | Прикладные Prometheus-коллекторы |
 | `ARTIFACT_SAMPLE_RATE` | `44100` | Sample rate MP3 (только 44100) |
 | `FFMPEG_MP3_VBR_QUALITY` | `2` | Качество libmp3lame VBR (`0` лучше … `9` хуже) |
-| `TELEMOST_JOIN_TIMEOUT_SEC` | `180` | Таймаут join Telemost (комната ожидания) |
+| `CONF_JOIN_TIMEOUT_SEC` | `180` | Join timeout (Jitsi prejoin / moderator wait, Telemost waiting room) |
 | `TELEMOST_STORAGE_STATE` | — | Playwright storage (опционально, Yandex session) |
 | `TELEMOST_CDP_GRANT` | `true` | CDP `audioCapture` для Telemost |
 | `TELEMOST_GUM_FALLBACK` | `true` | Dummy tracks при отказе getUserMedia |
