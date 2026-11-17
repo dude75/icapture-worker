@@ -19,6 +19,9 @@ def parse_meeting_url(meeting_url: str) -> tuple[str, str]:
     host = parsed.hostname
     if not host:
         raise InvalidMeetingUrl("missing host")
+    # Preserve non-default port (e.g. Jitsi on https://host:8443/room).
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
     path = parsed.path.strip("/")
     if not path:
         raise InvalidMeetingUrl("missing room in path")

@@ -15,6 +15,12 @@ def test_parse_meeting_url_nested_path() -> None:
     assert room == "RoomName"
 
 
+def test_parse_meeting_url_non_default_port() -> None:
+    host, room = parse_meeting_url("https://192.168.230.120:8443/owner-room")
+    assert host == "192.168.230.120:8443"
+    assert room == "owner-room"
+
+
 @pytest.mark.parametrize(
     "url",
     [
